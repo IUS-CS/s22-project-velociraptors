@@ -1,0 +1,26 @@
+{
+  "name": "challenge-accepted",
+  "version": "1.0.0",
+  "description": "C346 Project",
+  "main": "index.js",
+  "directories": {
+    "doc": "doc"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IUS-CS/s22-project-velociraptors.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/IUS-CS/s22-project-velociraptors/issues"
+  },
+  "homepage": "https://github.com/IUS-CS/s22-project-velociraptors#readme",
+  "devDependencies": {
+    "eslint": "^8.8.0",
+    "gulp": "^4.0.2"
+  }
+}
