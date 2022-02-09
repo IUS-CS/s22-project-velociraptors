@@ -1,4 +1,4 @@
-Velociraptors Semester Project Proposal
+Challenge Accepted! - Project Proposal
 
 
 **Overview**
