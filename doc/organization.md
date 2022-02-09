@@ -2,16 +2,18 @@
 
 ### Nicholas Coles
 #### Project Owner
-#### Developer
+#### Web Developer
 
 ### Gabe Kamer
 #### Project Owner
-#### Developer
+#### UI Developer
 
 ### Joseph Lyell
 #### Project Owner
 #### Developer
+#### Product Manager
+#### Unit Testing
 
 ### Brandon Mora
 #### Project Owner
-#### Developer
+#### Web Developer
