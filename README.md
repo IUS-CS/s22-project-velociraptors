@@ -7,7 +7,9 @@ Download Node.js and the latest project file.
 2. Install dependencies:
     npm install --save-dev @electron-forge/cli
     npx electron-forge import
-3. Run "start" script:
+3. For testing:
+    npm install --save-dev @cucumber/cucumber
+4. Run "start" script:
     npm start
 
 
