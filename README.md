@@ -5,11 +5,17 @@ Download Node.js and the latest project file.
 
 1. Open a terminal window at the project folder location. */s22-poject-velociraptors/challenge-accepted
 2. Install dependencies:
+
     npm install --save-dev @electron-forge/cli
+    
     npx electron-forge import
+
 3. For testing:
+
     npm install --save-dev @cucumber/cucumber
+    
 4. Run "start" script:
+
     npm start
 
 
