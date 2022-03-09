@@ -1,4 +1,4 @@
-module s22-project-velociraptors/bot
+module github.com/IUS-CS/s22-project-velociraptors/src
 
 go 1.17
 

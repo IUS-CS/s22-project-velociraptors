@@ -11,6 +11,9 @@ Install DiscordGo
 
 
 ## To build:
+
+    
+
 Assign token variable
 
     export BOT_TOKEN=<TOKEN GOES HERE!!!!!>
