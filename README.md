@@ -1,6 +1,7 @@
 # Challenge Accepted
 
 ## Initial setup:
+
 Initialize go modules:
 
     go mod init github.com/IUS-CS/s22-project-velociraptors
@@ -13,6 +14,7 @@ Install DiscordGo
 ## To build:
 
     
+## To run:
 
 Assign token variable
 

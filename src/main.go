@@ -58,6 +58,8 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
+	//to send a message when m.Content == <whatever trigger you want>
+	//follow this format
 	if m.Content == "Does the bot work?" {
 		s.ChannelMessageSend(m.ChannelID, testMessage)
 	} else {
