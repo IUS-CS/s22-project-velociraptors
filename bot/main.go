@@ -24,7 +24,7 @@ const testMessage = "If you're reading this, the bot works."
 
 func main() {
 	//create a new Discord session using the provided bot token
-	dg, err := discordgo.new("Bot " + Token)
+	dg, err := discordgo.New("Bot " + Token)
 	if err != nil {
 		fmt.Println("error creating Discord session,", err)
 		return
@@ -54,14 +54,13 @@ func main() {
 func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	//ignore all messages created by the bot itself
-	if m.Author.ID == s.State.User.ID{
+	if m.Author.ID == s.State.User.ID {
 		return
 	}
 
-	if m.Content == "Does the bot work?"{
-		s.ChennelMessageSend(m.ChannelID, testMessage)
-	} else{
+	if m.Content == "Does the bot work?" {
+		s.ChannelMessageSend(m.ChannelID, testMessage)
+	} else {
 		return
-	}
 	}
 }
