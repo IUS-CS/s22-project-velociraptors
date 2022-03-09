@@ -3,8 +3,7 @@ Challenge Accepted! - Project Proposal
 
 **Overview**
 
-Our program is a web-based application that serves as a browser for users to look up information
-as well as a scoreboard to keep track of who in the users' group of friends is right/wrong most often.
+Challenge Accepted is a Discord bot with a scoreboard to keep track of who in the server is right/wrong most often.
 
 
 **Vision Statment**
@@ -13,17 +12,17 @@ as well as a scoreboard to keep track of who in the users' group of friends is r
 
 • WHO want to keep a running scoreboard,
 
-• Challenge Accepted is a web app
+• Challenge Accepted is a Discord bot
 
 • THAT lets you remind your friends how often you're right.
 
-• UNLIKE a regular internet search
+• UNLIKE other Discord bots
 
 • OUR PRODUCT keeps track of who is right and who is wrong over time.
 
 **Use case**
 
-An ideal scenario for our application would be when a user is hanging out with friends who have a disagreement over a subject, and they turn to the internet to solve it. They would pull up our app in place of a web search so that they can keep track of who is right/wrong once they find the answer. Then they can share the running scoreboard with their friends for bragging rights/to shame their inferior friends.
+An ideal scenario for our application would be when a user spots a message in a Discord text channel that they want to challenge. They can challenge the user, and others in the channel can vote on the winner of the challenge. The winner's score is updated, and then they can share the running scoreboard with their friends for bragging rights/to shame their inferior friends.
 
 **Process**
 

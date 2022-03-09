@@ -6,7 +6,7 @@
 
 ### Gabe Kamer
 #### Project Owner
-#### UI Developer
+#### Web Developer
 
 ### Joseph Lyell
 #### Project Owner

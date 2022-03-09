@@ -1,32 +1,30 @@
 # Challenge Accepted
 
-## To build
-Download Node.js and the latest project file.
+## Initial setup:
+Initialize go modules:
 
-1. Open a terminal window at the project folder location. */s22-poject-velociraptors/challenge-accepted
-2. Install dependencies:
+    go mod init github.com/IUS-CS/s22-project-velociraptors
 
-    npm install --save-dev @electron-forge/cli
-    
-    npx electron-forge import
+Install DiscordGo
 
-3. For testing:
+    go get github.com/bwmarrin/discordgo
 
-    npm install --save-dev @cucumber/cucumber
-    
-4. Run "start" script:
 
-    npm start
+## To build:
+Assign token variable
 
+    export BOT_TOKEN=<TOKEN GOES HERE!!!!!>
+
+Run main.go with & pass it the token variable
+
+    go run main.go -t $BOT_TOKEN
 
 ## What is it?
-Challenge Accepted is a web-based application that serves as a browser for users to look up information as well as a scoreboard to keep track of who in the users' group of friends is right/wrong most often.
+Challenge Accepted is a Discord bot with a scoreboard to keep track of who in the server is right/wrong most often.
 
 ## How does it work? 
-You open the web page and select the two names of the people who are arguing. 
+You reply to a message in the channel with !challenge to start a challenge. Users then use emojis reactions to vote for the winner of the challenge.
 
-You will then be prompted to select who started the argument. 
+The winner is chosen/updated in real time once at least 2 votes have been cast.
 
-After searching the web you come back and select who was right. 
-
-The app will keep track of everybody's score and will show a leaderboard at the end.
+Other commands include !leaderboard to display the leaderboard and !score '@user' to display the mentioned user's score.
