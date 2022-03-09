@@ -20,7 +20,8 @@ func init() {
 	flag.Parse()
 }
 
-const testMessage = "If you're reading this, the bot works."
+const testTrigger string = "Does the bot work?"
+const testResponse string = "Vinny is alive and well."
 
 func main() {
 	//create a new Discord session using the provided bot token
@@ -58,8 +59,10 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	if m.Content == "Does the bot work?" {
-		s.ChannelMessageSend(m.ChannelID, testMessage)
+	//to send a message when m.Content == <whatever trigger you want>
+	//follow this format
+	if m.Content == testTrigger {
+		s.ChannelMessageSend(m.ChannelID, testResponse)
 	} else {
 		return
 	}
