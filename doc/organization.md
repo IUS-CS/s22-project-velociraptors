@@ -1,19 +1,17 @@
 # Organization
 
-### Nicholas Coles
-#### Project Owner
-#### Web Developer
-
-### Gabe Kamer
-#### Project Owner
-#### Web Developer
-
-### Joseph Lyell
-#### Project Owner
+## Nicholas Coles
 #### Developer
-#### Product Manager
-#### Unit Testing
+<br>
 
-### Brandon Mora
-#### Project Owner
-#### Web Developer
+## Gabe Kamer
+#### Developer
+<br>
+
+## Joseph Lyell
+#### Product Owner
+#### Developer
+<br>
+
+## Brandon Mora
+#### Developer
