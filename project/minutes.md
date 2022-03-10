@@ -27,3 +27,9 @@ Points | Story
 2      | Site map
 2      | Write copy
 5      | Research domain & webserver options
+
+# Sprint 2 - Closing Minutes
+## 3/9/2022
+
+This sprint, we completed
+* prototype

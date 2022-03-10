@@ -2,10 +2,6 @@
 
 ## Initial setup:
 
-Initialize go modules:
-
-    go mod init github.com/IUS-CS/s22-project-velociraptors
-
 Install DiscordGo
 
     go get github.com/bwmarrin/discordgo
@@ -18,6 +14,10 @@ Install DiscordGo
 
 Assign token variable
 
+Windows
+    set BOT_TOKEN=<TOKEN GOES HERE!!!!!>
+
+Mac:
     export BOT_TOKEN=<TOKEN GOES HERE!!!!!>
 
 Run main.go with & pass it the token variable
