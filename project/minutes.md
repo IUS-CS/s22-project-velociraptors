@@ -27,3 +27,24 @@ Points | Story
 2      | Site map
 2      | Write copy
 5      | Research domain & webserver options
+
+# Sprint 3 - Closing Minutes
+## 3/23/22
+
+This sprint, we completed
+* architecture 
+* design patterns
+* code
+
+### Retrospective
+
+What went well? - Communication/availability of team members.
+What can be improved? - We procrastinated more than we should have.
+What will we commit to improving next sprint? - Starting sooner on our tasks.
+
+Points | Story
+-------|--------
+4      | unit testing 
+2      | propose features
+6      | feature implementation 
+6      | SQLite implimentation
