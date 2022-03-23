@@ -28,6 +28,28 @@ Points | Story
 2      | Write copy
 5      | Research domain & webserver options
 
+# Sprint 2 - Closing Minutes
+## 3/1/22
+
+This sprint, we completed
+* The Prototype to our project as a discord bot
+* Updates to documentation 
+* Researching on data structures that we can use to store the scoreboard
+* Site map
+
+
+### Retrospective
+
+What went well? - Communication/availability of team members.
+What can be improved? - Communication/availability of team members. We procrastinated more than we should have.
+What will we commit to improving next sprint? - Starting sooner on our tasks and having more meetings.
+
+Points | Story
+-------|--------
+2      | Architecture
+5      | Design Patterns
+8      | code to functions
+
 # Sprint 3 - Closing Minutes
 ## 3/23/22
 
