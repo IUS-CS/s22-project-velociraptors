@@ -24,7 +24,9 @@ Assign token variable
     For Windows:
     set BOT_TOKEN=<TOKEN GOES HERE!!!!!>
 
-Windows users need a 
+Windows users download C compiler:
+
+    https://jmeubank.github.io/tdm-gcc/
 
 
 Run main.go with & pass it the token variable
