@@ -18,7 +18,16 @@ Install DiscordGo
 
 Assign token variable
 
+    For Mac:
     export BOT_TOKEN=<TOKEN GOES HERE!!!!!>
+
+    For Windows:
+    set BOT_TOKEN=<TOKEN GOES HERE!!!!!>
+
+Windows users download C compiler:
+
+    https://jmeubank.github.io/tdm-gcc/
+
 
 Run main.go with & pass it the token variable
 
