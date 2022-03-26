@@ -2,32 +2,28 @@
 
 ## Initial setup:
 
-Initialize go modules:
-
-    go mod init github.com/IUS-CS/s22-project-velociraptors
-
 Install DiscordGo
 
     go get github.com/bwmarrin/discordgo
+    
+Windows users install C compiler:
 
-
-## To build:
-
+    https://jmeubank.github.io/tdm-gcc/
+    (might have to reboot after install)
     
 ## To run:
+
+Open terminal at project src folder
+
+    /s22-project-velociraptors/src
 
 Assign token variable
 
     For Mac:
     export BOT_TOKEN=<TOKEN GOES HERE!!!!!>
 
-    For Windows:
-    set BOT_TOKEN=<TOKEN GOES HERE!!!!!>
-
-Windows users download C compiler:
-
-    https://jmeubank.github.io/tdm-gcc/
-
+    For Windows (Powershell):
+    Set-Variable -Name "BOT_TOKEN" -Value "<TOKEN GOES HERE!!!!!>"
 
 Run main.go with & pass it the token variable
 
