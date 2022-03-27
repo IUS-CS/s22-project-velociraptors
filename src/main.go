@@ -150,7 +150,7 @@ func initChallengeTableEntry(messageID string, authorUserID string, authorUserna
 		ChallengerVotes: 0,
 		DefenderVotes:   0,
 		AbstainVotes:    0,
-		Outcome:         0,
+		Outcome:         3,
 	}
 	return ChallengeTableEntry
 }
@@ -277,7 +277,28 @@ func insertVotingRecordRow(db *sqlx.DB, row VotingRecordEntryStruct) {
 	return
 }
 
-func initVotingRecordEntry(authorUserID string, messageID string) VotingRecordEntryStruct {
+func removeVotingRecordRow(db *sqlx.DB, row VotingRecordEntryStruct) {
+	query := "DELETE FROM votingRecord WHERE MessageID = ? AND UserID = ?"
+	stmt, err := db.Prepare(query)
+	if err != nil {
+		log.Printf("Error %s while preparing removeVotingRecord query", err)
+		return
+	}
+	res, err := stmt.Exec(row.MessageID, row.UserID)
+	if err != nil {
+		log.Printf("Error %s while executing removeVotingRecord query", err)
+		return
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		log.Printf("Error %s when fetching rows affected during removeVotingRecord", err)
+		return
+	}
+	log.Printf("%d rows affected when removing votingRecord", rows)
+	return
+}
+
+func initVotingRecordRow(authorUserID string, messageID string) VotingRecordEntryStruct {
 	VotingRecordEntry := VotingRecordEntryStruct{authorUserID, messageID, 0, 0, 0}
 	return VotingRecordEntry
 }
@@ -453,7 +474,7 @@ func messageReactionCreate(s *discordgo.Session, r *discordgo.MessageReactionAdd
 		}
 		defer db.Close()
 		votingRecordEntry, err := selectVotingRecordRow(db, reactionAuthorID, messageID)
-		if hasVotedBlue(db, votingRecordEntry) {
+		if hasVotedBlue(db, votingRecordEntry) || hasVotedYellow(db, votingRecordEntry) || hasVotedRed(db, votingRecordEntry) {
 			log.Println("User has voted already")
 			return
 		}
@@ -493,7 +514,7 @@ func messageReactionCreate(s *discordgo.Session, r *discordgo.MessageReactionAdd
 		}
 		defer db.Close()
 		votingRecordEntry, err := selectVotingRecordRow(db, reactionAuthorID, messageID)
-		if hasVotedBlue(db, votingRecordEntry) {
+		if hasVotedYellow(db, votingRecordEntry) || hasVotedBlue(db, votingRecordEntry) || hasVotedRed(db, votingRecordEntry) {
 			log.Println("User has voted already")
 			return
 		}
@@ -502,7 +523,7 @@ func messageReactionCreate(s *discordgo.Session, r *discordgo.MessageReactionAdd
 			votingRecordEntry.MessageID = messageID
 			insertVotingRecordRow(db, votingRecordEntry)
 		}
-		votingRecordEntry.ChallengerVotes = 1
+		votingRecordEntry.DefenderVotes = 1
 		updateVotingRecord(db, votingRecordEntry)
 		votes, err := selectVotes(db, messageID)
 		if err != nil {
@@ -533,7 +554,7 @@ func messageReactionCreate(s *discordgo.Session, r *discordgo.MessageReactionAdd
 		}
 		defer db.Close()
 		votingRecordEntry, err := selectVotingRecordRow(db, reactionAuthorID, messageID)
-		if hasVotedBlue(db, votingRecordEntry) {
+		if hasVotedRed(db, votingRecordEntry) || hasVotedBlue(db, votingRecordEntry) || hasVotedYellow(db, votingRecordEntry) {
 			log.Println("User has voted already")
 			return
 		}
@@ -542,7 +563,7 @@ func messageReactionCreate(s *discordgo.Session, r *discordgo.MessageReactionAdd
 			votingRecordEntry.MessageID = messageID
 			insertVotingRecordRow(db, votingRecordEntry)
 		}
-		votingRecordEntry.ChallengerVotes = 1
+		votingRecordEntry.AbstainVotes = 1
 		updateVotingRecord(db, votingRecordEntry)
 		votes, err := selectVotes(db, messageID)
 		if err != nil {
@@ -562,6 +583,110 @@ func messageReactionCreate(s *discordgo.Session, r *discordgo.MessageReactionAdd
 		updateOutcome(db, messageID, votes)
 		row, err := selectChallengeRow(db, messageID)
 		printChallengeRow(row)
+	}
+}
+
+//trigger>response for messagereactionremove events
+func messageReactionDelete(s *discordgo.Session, r *discordgo.MessageReactionRemove) {
+	reactionEmoji := r.Emoji.Name
+	messageID := r.MessageID
+	reactionAuthorID := r.UserID
+
+	if reactionEmoji == "🛹" {
+		log.Println("Skateboard removed")
+	}
+
+	if reactionEmoji == "🟦" {
+		db, err := dbConnection()
+		if err != nil {
+			log.Printf("Error %s when getting database connection", err)
+			return
+		}
+		defer db.Close()
+		votingRecordEntry, err := selectVotingRecordRow(db, reactionAuthorID, messageID)
+		if hasVotedBlue(db, votingRecordEntry) {
+			removeVotingRecordRow(db, votingRecordEntry)
+			votes, err := selectVotes(db, messageID)
+			if err != nil {
+				log.Printf("Error %s while selecting votes", err)
+				return
+			}
+			ChallengerVotes := votes.ChallengerVotes - 1
+			DefenderVotes := votes.DefenderVotes
+			AbstainVotes := votes.AbstainVotes
+			updatedVotes := VotesStruct{ChallengerVotes, DefenderVotes, AbstainVotes}
+			updateVotes(db, messageID, updatedVotes)
+			votes, err = selectVotes(db, messageID)
+			if err != nil {
+				log.Printf("Error %s while selecting votes", err)
+				return
+			}
+			updateOutcome(db, messageID, votes)
+			row, err := selectChallengeRow(db, messageID)
+			printChallengeRow(row)
+		}
+	}
+
+	if reactionEmoji == "🟨" {
+		db, err := dbConnection()
+		if err != nil {
+			log.Printf("Error %s when getting database connection", err)
+			return
+		}
+		defer db.Close()
+		votingRecordEntry, err := selectVotingRecordRow(db, reactionAuthorID, messageID)
+		if hasVotedYellow(db, votingRecordEntry) {
+			removeVotingRecordRow(db, votingRecordEntry)
+			votes, err := selectVotes(db, messageID)
+			if err != nil {
+				log.Printf("Error %s while selecting votes", err)
+				return
+			}
+			ChallengerVotes := votes.ChallengerVotes
+			DefenderVotes := votes.DefenderVotes - 1
+			AbstainVotes := votes.AbstainVotes
+			updatedVotes := VotesStruct{ChallengerVotes, DefenderVotes, AbstainVotes}
+			updateVotes(db, messageID, updatedVotes)
+			votes, err = selectVotes(db, messageID)
+			if err != nil {
+				log.Printf("Error %s while selecting votes", err)
+				return
+			}
+			updateOutcome(db, messageID, votes)
+			row, err := selectChallengeRow(db, messageID)
+			printChallengeRow(row)
+		}
+	}
+
+	if reactionEmoji == "🟥" {
+		db, err := dbConnection()
+		if err != nil {
+			log.Printf("Error %s when getting database connection", err)
+			return
+		}
+		defer db.Close()
+		votingRecordEntry, err := selectVotingRecordRow(db, reactionAuthorID, messageID)
+		if hasVotedRed(db, votingRecordEntry) {
+			removeVotingRecordRow(db, votingRecordEntry)
+			votes, err := selectVotes(db, messageID)
+			if err != nil {
+				log.Printf("Error %s while selecting votes", err)
+				return
+			}
+			ChallengerVotes := votes.ChallengerVotes
+			DefenderVotes := votes.DefenderVotes
+			AbstainVotes := votes.AbstainVotes - 1
+			updatedVotes := VotesStruct{ChallengerVotes, DefenderVotes, AbstainVotes}
+			updateVotes(db, messageID, updatedVotes)
+			votes, err = selectVotes(db, messageID)
+			if err != nil {
+				log.Printf("Error %s while selecting votes", err)
+				return
+			}
+			updateOutcome(db, messageID, votes)
+			row, err := selectChallengeRow(db, messageID)
+			printChallengeRow(row)
+		}
 	}
 }
 
@@ -607,6 +732,7 @@ func main() {
 	//register messageCreate function as a callback for MessageCreate events
 	dg.AddHandler(messageCreate)
 	dg.AddHandler(messageReactionCreate)
+	dg.AddHandler(messageReactionDelete)
 
 	//everything runs here until one of the term signals is received
 	fmt.Println("Bot is now running. Press CTRL-C to exit.")
