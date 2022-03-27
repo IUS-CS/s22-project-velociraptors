@@ -1,13 +1,5 @@
+# Architecture
 
-
-
-
-Create a new document that describes the architecture of your project. Store this file in /doc/architecture.md with Markdown formatting and include any external resources necessary. For example:
-
-Are you writing a game? Record how the various components/objects in your system will interact.
-
-Note: this can help you figure out how you will test those components if you can separate them from the game loop.
-
-Are you writing a website? Record a sample database schema, diagram of how the MVC components interact, or sequence diagram of the actions that happen with the website.
-
-Make liberal use of diagramming utilities to accomplish this task. If you can not easily create 10 diagrams detailing aspects of your application, you have not thought your application out. There is not a requirement to have perfect UML structures, but UML utilities may aid in this task. http://creately.com is a great resource for creating professional diagrams. The free version can export images.
+## Discord Bot
+The Discord bot creates two different databases; one for holding challenge data and one for holding user points. A challenger will mention the bot and someone else to challenge. If accepted, the bot will then announce the challenge and the participants and ask for votes. The votes are inserted into a database. Upon voting ending, a winner is determined and the challenge data database is updated.
+![Capture](https://user-images.githubusercontent.com/98437411/160295372-2969502c-0940-404b-ab91-61c402d7ff70.PNG)
