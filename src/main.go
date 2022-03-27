@@ -1,63 +1,14 @@
-/*
--on startup, the bot creates a database with two tables:
-	-challengeTable
-	-scoreboardTable
-
--each challengeTable row stores the following information needed to initiate a vote for a single challenge:
-	-challengeID, a unique value to distinguish challenges from each other
-	-challengerID, the ID of the user who replied '!challenge' to a message
-	-challengerName, the username of the user who replied '!challenge'
-	-defenderID, the ID of the user whose message was challenged
-	-defenderName, the name of the user whose message was challenged
-	-challengerVotes, the # of votes for the challenger
-	-defenderVotes, the # of votes for the defender
-	-abstainVotes, the # of abstain votes
-	-outcome, the result of the votes (0=tie,1=challenger wins,2=defender wins)
-
--each scoreboardTable row stores the following information needed to track the results of challenges on the server for an individual user:
-	-userID, a unique value of the user whose results are stored in this entry
-	-username
-	-totalChallengeWins, count of all this user's wins, whether defending or challenging
-	-totalChallengeLosses, count of all this user's losses, " " " "
-	-totalChallengeTies, count of all this user's ties, " " " "
-	-totalChallenges, wins + losses + ties
-	-successfulChallenges, # of challenges where this user initiated the challenge and won
-	-failedChallenges, # of challenges where this user initiated the challenge and lost
-	-successfulDefenses, # of challenges where this user was challenged by someone else and won
-	-failedDefenses, # of challenges where this user was challenged by someone else and lost
-
--a challenge begins when a user replies '!challenge' to a message on the server
--a new challengeEntry row is inserted into the challenge table
-	-challenger and defender info is stored and vote counts are set to 0
-	-outcome starts as 0 (tie)
--the bot sends a message to the same channel announcing the start of the challenge
-
-TO DO:
-
--if it is a user's first time participating in a challenge, a new scoreboardEntry row is inserted into the scoreboard table (one for each new participant)
-	-user info is stored and initial values are 0 for all other fields
--when a vote reaction (blue, yellow or red square) is added to the message, the challengeEntry's vote counts are updated
--when the challengeEntry's vote counts are updated, the outcome field is updated for that entry
--when the outcome field of a challenge is updated, the participating users' scoreboardEntry counts are updated
--when a user sends a message that says '!checkScore <@username>', the tagged user's scoreboardEntry stats are sent in a message in the server
-
-
-Potential features:
--function to set/announce time-limited votes
-
-
-
-*/
-
 package main
 
 import (
 	"context"
+	"database/sql"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -93,7 +44,7 @@ const (
 
 //ChallengeTableEntryStruct fields
 type ChallengeTableEntryStruct struct {
-	ChallengeID     int    `db:"ChallengeID"`
+	MessageID       string `db:"MessageID"`
 	ChallengerID    string `db:"ChallengerID"`
 	ChallengerName  string `db:"ChallengerName"`
 	DefenderID      string `db:"DefenderID"`
@@ -120,6 +71,20 @@ type ChallengeTableEntryStruct struct {
 // 	FailedDefenses       int
 // }
 
+type VotingRecordEntryStruct struct {
+	UserID          string `db:"UserID"`
+	MessageID       string `db:"MessageID"`
+	ChallengerVotes int    `db:"ChallengerVotes"`
+	DefenderVotes   int    `db:"DefenderVotes"`
+	AbstainVotes    int    `db:"AbstainVotes"`
+}
+
+type VotesStruct struct {
+	ChallengerVotes int `db:"ChallengerVotes"`
+	DefenderVotes   int `db:"DefenderVotes"`
+	AbstainVotes    int `db:"AbstainVotes"`
+}
+
 func init() {
 	flag.StringVar(&Token, "t", "", "Bot Token")
 	flag.Parse()
@@ -137,7 +102,7 @@ func dbConnection() (*sqlx.DB, error) {
 
 //this table stores values for challenge votes
 func createChallengeTable(db *sqlx.DB) error {
-	query := "CREATE TABLE IF NOT EXISTS challengeTable(ChallengeID int primary key, ChallengerID varchar(50), ChallengerName varchar(50), DefenderID varchar(50), DefenderName varchar(50), ChallengerVotes int, DefenderVotes int, AbstainVotes int, Outcome int)"
+	query := "CREATE TABLE IF NOT EXISTS challengeTable(MessageID string primary key, ChallengerID text, ChallengerName text, DefenderID text, DefenderName text, ChallengerVotes int, DefenderVotes int, AbstainVotes int, Outcome int)"
 	ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelfunc()
 	res, err := db.ExecContext(ctx, query)
@@ -154,9 +119,108 @@ func createChallengeTable(db *sqlx.DB) error {
 	return nil
 }
 
+func insertChallengeRow(db *sqlx.DB, row ChallengeTableEntryStruct) {
+	query := "INSERT INTO challengeTable (MessageID, ChallengerID, ChallengerName, DefenderID, DefenderName, ChallengerVotes, DefenderVotes, AbstainVotes, Outcome) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+	stmt, err := db.Prepare(query)
+	if err != nil {
+		log.Printf("Error %s while preparing insertChallengeRow query", err)
+		return
+	}
+	res, err := stmt.Exec(row.MessageID, row.ChallengerID, row.ChallengerName, row.DefenderID, row.DefenderName, row.ChallengerVotes, row.DefenderVotes, row.AbstainVotes, row.Outcome)
+	if err != nil {
+		log.Printf("Error %s while executing insertChallengeRow query", err)
+		return
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		log.Printf("Error %s when fetching rows affected during insertChallengeRow", err)
+		return
+	}
+	log.Printf("%d rows affected when inserting challenge row", rows)
+	return
+}
+
+func initChallengeTableEntry(messageID string, authorUserID string, authorUsername string, referencedAuthorID string, referencedAuthorName string) ChallengeTableEntryStruct {
+	ChallengeTableEntry := ChallengeTableEntryStruct{
+		MessageID:       messageID,
+		ChallengerID:    authorUserID,
+		ChallengerName:  authorUsername,
+		DefenderID:      referencedAuthorID,
+		DefenderName:    referencedAuthorName,
+		ChallengerVotes: 0,
+		DefenderVotes:   0,
+		AbstainVotes:    0,
+		Outcome:         0,
+	}
+	return ChallengeTableEntry
+}
+
+func selectChallengeRow(db *sqlx.DB, MessageID string) (ChallengeTableEntryStruct, error) {
+	challengeRow := ChallengeTableEntryStruct{}
+	err := db.Get(&challengeRow, "SELECT MessageID, ChallengerID, ChallengerName, DefenderID, DefenderName, ChallengerVotes, DefenderVotes, AbstainVotes, Outcome FROM challengeTable WHERE MessageID = ?", MessageID)
+	return challengeRow, err
+}
+
+func selectVotes(db *sqlx.DB, MessageID string) (VotesStruct, error) {
+	votes := VotesStruct{}
+	err := db.Get(&votes, "SELECT ChallengerVotes, DefenderVotes, AbstainVotes FROM challengeTable WHERE MessageID = ?", MessageID)
+	return votes, err
+}
+
+func updateVotes(db *sqlx.DB, MessageID string, votes VotesStruct) {
+	query := "UPDATE challengeTable SET ChallengerVotes = ?, DefenderVotes = ?, AbstainVotes = ? WHERE MessageID = ?"
+	stmt, err := db.Prepare(query)
+	if err != nil {
+		log.Printf("Error %s while preparing updateVotes query", err)
+		return
+	}
+	res, err := stmt.Exec(votes.ChallengerVotes, votes.DefenderVotes, votes.AbstainVotes, MessageID)
+	if err != nil {
+		log.Printf("Error %s while executing updateVotes query", err)
+		return
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		log.Printf("Error %s when fetching rows affected during updateVotes", err)
+		return
+	}
+	log.Printf("%d rows affected when updating votes", rows)
+	return
+}
+
+func updateOutcome(db *sqlx.DB, MessageID string, votes VotesStruct) {
+	query := "UPDATE challengeTable SET Outcome = ? WHERE MessageID = ?"
+	stmt, err := db.Prepare(query)
+	if err != nil {
+		log.Printf("Error %s while preparing updateOutcome query", err)
+		return
+	}
+	var res sql.Result
+	if votes.ChallengerVotes > votes.DefenderVotes {
+		res, err = stmt.Exec(1, MessageID)
+	}
+	if votes.ChallengerVotes < votes.DefenderVotes {
+		res, err = stmt.Exec(2, MessageID)
+	}
+	if votes.ChallengerVotes == votes.DefenderVotes {
+		res, err = stmt.Exec(3, MessageID)
+	}
+	if err != nil {
+		log.Printf("Error %s while executing updateVotes query", err)
+		return
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		log.Printf("Error %s when fetching rows affected during updateOutcome", err)
+		return
+	}
+	log.Printf("%d rows affected when updating outcome", rows)
+	return
+}
+
 //this table stores results of challenge votes
 func createScoreboardTable(db *sqlx.DB) error {
-	query := "CREATE TABLE IF NOT EXISTS scoreboardTable(UserID varchar(50) primary key, Username varchar(50), TotalChallengeWins int, TotalChallengeLosses int, TotalChallenges int, SuccessfulChallenges int, FailedChallenges int, SuccessfulDefenses int, FailedDefenses int)"
+	query := "CREATE TABLE IF NOT EXISTS scoreboardTable(UserID text primary key, Username text, TotalChallengeWins int, TotalChallengeLosses int, TotalChallenges int, SuccessfulChallenges int, FailedChallenges int, SuccessfulDefenses int, FailedDefenses int)"
 	ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelfunc()
 	res, err := db.ExecContext(ctx, query)
@@ -173,107 +237,150 @@ func createScoreboardTable(db *sqlx.DB) error {
 	return nil
 }
 
-func insertChallengeRow(db *sqlx.DB, t ChallengeTableEntryStruct) error {
-	query := "INSERT OR IGNORE INTO challengeTable(ChallengeID, ChallengerID, ChallengerName, DefenderID, DefenderName, ChallengerVotes, DefenderVotes, AbstainVotes, Outcome) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+//this table stores users' votes on each challenge
+func createVotingRecord(db *sqlx.DB) error {
+	query := "CREATE TABLE IF NOT EXISTS votingRecord(UserID text, MessageID text, ChallengerVotes int, DefenderVotes int, AbstainVotes int, PRIMARY KEY (UserID, MessageID))"
 	ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelfunc()
-	stmt, err := db.PrepareContext(ctx, query)
+	res, err := db.ExecContext(ctx, query)
 	if err != nil {
-		log.Printf("Error %s when preparing SQL insertChallengeRow statement", err)
-		return err
-	}
-	defer stmt.Close()
-	res, err := stmt.ExecContext(ctx, t.ChallengeID, t.ChallengerID, t.ChallengerName, t.DefenderID, t.DefenderName, t.ChallengerVotes, t.DefenderVotes, t.AbstainVotes, t.Outcome)
-	if err != nil {
-		log.Printf("Error %s when inserting row into ChallengeTableEntryStruct", err)
+		log.Printf("Error %s when creating voting record", err)
 		return err
 	}
 	rows, err := res.RowsAffected()
 	if err != nil {
-		log.Printf("Error %s when fetching rows affected while inserting row", err)
+		log.Printf("Error %s when fetching rows affected during table creation", err)
 		return err
 	}
-	log.Printf("%d entries created", rows)
+	log.Printf("%d rows affected when creating votingRecord", rows)
 	return nil
 }
 
-//insertScoreboardRow ready to be implemented with scoreboardUpdate function
-
-// func insertScoreboardRow(db *sqlx.DB, t scoreboardTableEntryStruct) error {
-// 	query := "INSERT OR IGNORE INTO scoreboardTable(UserID, Username, TotalChallengeWins, TotalChallengeLosses, TotalChallengeTies, TotalChallenges, SuccessfulChallenges, FailedChallenges, SuccessfulDefenses, FailedDefenses) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-// 	ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
-// 	defer cancelfunc()
-// 	stmt, err := db.PrepareContext(ctx, query)
-// 	if err != nil {
-// 		log.Printf("Error %s when preparing SQL insertScoreboardRow statement", err)
-// 		return err
-// 	}
-// 	defer stmt.Close()
-// 	res, err := stmt.ExecContext(ctx, t.UserID, t.Username, t.TotalChallengeWins, t.TotalChallengeLosses, t.TotalChallengeTies, t.TotalChallenges, t.SuccessfulChallenges, t.FailedChallenges, t.SuccessfulDefenses, t.FailedDefenses)
-// 	if err != nil {
-// 		log.Printf("Error %s when inserting row into ScoreboardTableEntryStruct", err)
-// 		return err
-// 	}
-// 	rows, err := res.RowsAffected()
-// 	if err != nil {
-// 		log.Printf("Error %s when fetching rows affected while inserting row", err)
-// 		return err
-// 	}
-// 	log.Printf("%d entries created", rows)
-// 	return nil
-// }
-
-//selectChallengeRow function ready to be implemented with scoreboardUpdate function
-
-// func selectChallengeRow(db *sqlx.DB, ChallengeID int) (ChallengeTableEntryStruct, error) {
-// 	challengeRow := ChallengeTableEntryStruct{}
-// 	err := db.Get(&challengeRow, "SELECT ChallengeID, ChallengerID, ChallengerName, DefenderID, DefenderName, ChallengerVotes, DefenderVotes, AbstainVotes, Outcome FROM challengeTable WHERE ChallengeID = ?", ChallengeID)
-// 	return challengeRow, err
-// }
-
-var incrementingChallengeID = 0
-
-func initChallengeTableEntry(authorUserID string, authorUsername string, referencedAuthorID string, referencedAuthorName string) ChallengeTableEntryStruct {
-	ChallengeTableEntry := ChallengeTableEntryStruct{
-		ChallengeID:     incrementingChallengeID,
-		ChallengerID:    authorUserID,
-		ChallengerName:  authorUsername,
-		DefenderID:      referencedAuthorID,
-		DefenderName:    referencedAuthorName,
-		ChallengerVotes: 0,
-		DefenderVotes:   0,
-		AbstainVotes:    0,
-		Outcome:         0,
+func insertVotingRecordRow(db *sqlx.DB, row VotingRecordEntryStruct) {
+	query := "INSERT OR IGNORE INTO votingRecord (UserID, MessageID, ChallengerVotes, DefenderVotes, AbstainVotes) VALUES (?, ?, ?, ?, ?)"
+	stmt, err := db.Prepare(query)
+	if err != nil {
+		log.Printf("Error %s while preparing insertVotingRecordRow query", err)
+		return
 	}
-	incrementingChallengeID++
-	return ChallengeTableEntry
+	res, err := stmt.Exec(row.UserID, row.MessageID, row.ChallengerVotes, row.DefenderVotes, row.AbstainVotes)
+	if err != nil {
+		log.Printf("Error %s while executing insertVotingRecordRow query", err)
+		return
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		log.Printf("Error %s when fetching rows affected during insertVotingRecordRow", err)
+		return
+	}
+	log.Printf("%d rows affected when inserting votingRecord row", rows)
+	return
 }
 
-//for testing purposes, prints in terminal
-// func printChallengeRow(row ChallengeTableEntryStruct) {
-// 	ChallengeID := strconv.Itoa(row.ChallengeID)
-// 	ChallengerID := row.ChallengerID
-// 	ChallengerName := row.ChallengerName
-// 	DefenderID := row.DefenderID
-// 	DefenderName := row.DefenderName
-// 	ChallengerVotes := strconv.Itoa(row.ChallengerVotes)
-// 	DefenderVotes := strconv.Itoa(row.DefenderVotes)
-// 	AbstainVotes := strconv.Itoa(row.AbstainVotes)
-// 	Outcome := strconv.Itoa(row.Outcome)
-// 	s := "-"
-// 	log.Println(ChallengeID + s + ChallengerID + s + ChallengerName + s + DefenderID + s + DefenderName + s + ChallengerVotes + s + DefenderVotes + s + AbstainVotes + s + Outcome)
-// }
+func initVotingRecordEntry(authorUserID string, messageID string) VotingRecordEntryStruct {
+	VotingRecordEntry := VotingRecordEntryStruct{authorUserID, messageID, 0, 0, 0}
+	return VotingRecordEntry
+}
+
+func selectVotingRecordRow(db *sqlx.DB, UserID string, MessageID string) (VotingRecordEntryStruct, error) {
+	votingRecordRow := VotingRecordEntryStruct{}
+	err := db.Get(&votingRecordRow, "SELECT UserID, MessageID, ChallengerVotes, DefenderVotes, AbstainVotes FROM votingRecord WHERE UserID = ? AND MessageID = ?", UserID, MessageID)
+	return votingRecordRow, err
+}
+
+func updateVotingRecord(db *sqlx.DB, VotingRecordEntry VotingRecordEntryStruct) {
+	query := "UPDATE votingRecord SET ChallengerVotes = ?, DefenderVotes = ?, AbstainVotes = ? WHERE MessageID = ? AND UserID = ?"
+	stmt, err := db.Prepare(query)
+	if err != nil {
+		log.Printf("Error %s while preparing updateVotingRecord query", err)
+		return
+	}
+	res, err := stmt.Exec(VotingRecordEntry.ChallengerVotes, VotingRecordEntry.DefenderVotes, VotingRecordEntry.AbstainVotes, VotingRecordEntry.MessageID, VotingRecordEntry.UserID)
+	if err != nil {
+		log.Printf("Error %s while executing updateVotingRecord query", err)
+		return
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		log.Printf("Error %s when fetching rows affected during updateVotingRecord", err)
+		return
+	}
+	log.Printf("%d rows affected when updating votingRecord", rows)
+	return
+}
+
+func hasVotedBlue(db *sqlx.DB, VotingRecordEntry VotingRecordEntryStruct) bool {
+	rec, err := selectVotingRecordRow(db, VotingRecordEntry.UserID, VotingRecordEntry.MessageID)
+	if err != nil {
+		return false
+	}
+	if rec.ChallengerVotes > 0 {
+		return true
+	}
+	return false
+}
+
+func hasVotedYellow(db *sqlx.DB, VotingRecordEntry VotingRecordEntryStruct) bool {
+	rec, err := selectVotingRecordRow(db, VotingRecordEntry.UserID, VotingRecordEntry.MessageID)
+	if err != nil {
+		return false
+	}
+	if rec.DefenderVotes > 0 {
+		return true
+	}
+	return false
+}
+
+func hasVotedRed(db *sqlx.DB, VotingRecordEntry VotingRecordEntryStruct) bool {
+	rec, err := selectVotingRecordRow(db, VotingRecordEntry.UserID, VotingRecordEntry.MessageID)
+	if err != nil {
+		return false
+	}
+	if rec.AbstainVotes > 0 {
+		return true
+	}
+	return false
+}
+
+//print in terminal
+
+func printChallengeRow(row ChallengeTableEntryStruct) {
+	MessageID := row.MessageID
+	ChallengerID := row.ChallengerID
+	ChallengerName := row.ChallengerName
+	DefenderID := row.DefenderID
+	DefenderName := row.DefenderName
+	ChallengerVotes := strconv.Itoa(row.ChallengerVotes)
+	DefenderVotes := strconv.Itoa(row.DefenderVotes)
+	AbstainVotes := strconv.Itoa(row.AbstainVotes)
+	Outcome := strconv.Itoa(row.Outcome)
+	s := "-"
+	log.Println("Challenge row values: " + MessageID + s + ChallengerID + s + ChallengerName + s + DefenderID + s + DefenderName + s + ChallengerVotes + s + DefenderVotes + s + AbstainVotes + s + Outcome)
+}
+
+func printVotes(votes VotesStruct) {
+	ChallengerVotes := strconv.Itoa(votes.ChallengerVotes)
+	DefenderVotes := strconv.Itoa(votes.DefenderVotes)
+	AbstainVotes := strconv.Itoa(votes.AbstainVotes)
+	s := "-"
+	log.Println(ChallengerVotes + s + DefenderVotes + s + AbstainVotes)
+}
+
+func printVotingRecordRow(v VotingRecordEntryStruct) {
+	UserID := v.UserID
+	MessageID := v.MessageID
+	ChallengerVotes := strconv.Itoa(v.ChallengerVotes)
+	DefenderVotes := strconv.Itoa(v.DefenderVotes)
+	AbstainVotes := strconv.Itoa(v.AbstainVotes)
+	s := "-"
+	log.Println(UserID + s + MessageID + s + ChallengerVotes + s + DefenderVotes + s + AbstainVotes)
+}
 
 //trigger>response for messagecreate events
 func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	var messageContent = m.Content
 	var messageType = m.Type
-
-	//ignore all messages created by the bot itself
-	if m.Author.ID == s.State.User.ID {
-		return
-	}
 
 	//to send a message when m.Content == <whatever trigger you want>
 	//follow this format (EqualFold compares strings, ignores case and returns True if they are equal):
@@ -295,35 +402,167 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		authorUserID := m.Message.Author.ID
 		referencedAuthorUsername := m.ReferencedMessage.Author.Username
 		referencedAuthorID := m.ReferencedMessage.Author.ID
-		//create ChallengeTableEntry
-		challengeTableEntry := initChallengeTableEntry(authorUserID, authorUsername, referencedAuthorID, referencedAuthorUsername)
-		log.Println("ChallengeTableEntry initialized")
-		err = insertChallengeRow(db, challengeTableEntry)
-		if err != nil {
-			log.Printf("Insert challenge row failed with error %s", err)
-			return
-		}
-		log.Println("ChallengeTableEntry inserted")
-		//announce challenge in the channel
 
 		challengerInfo := "<@" + authorUserID + ">" + challengeMessage1 + "<@" + referencedAuthorID + ">" + "!"
-
 		debate := "\n\n<@" + referencedAuthorID + ">" + " says: `" + m.ReferencedMessage.Content + "`\n\n<@" + authorUserID + "> disagrees!\n"
-
 		votingInfo := "\n" + challengeMessage2 + challengeMessage3 + "<@" + authorUserID + ">" + challengeMessage4 + "<@" + referencedAuthorID + ">" + challengeMessage5
-
 		fullChallengeMessage := challengerInfo + debate + votingInfo
 		announcementMessage, err := s.ChannelMessageSend(m.ChannelID, fullChallengeMessage)
 		if err != nil {
 			log.Printf("Error getting bot's message: %d", err)
 			return
 		}
-		//add voting reactions
 		s.MessageReactionAdd(m.ChannelID, announcementMessage.ID, "🟦")
 		s.MessageReactionAdd(m.ChannelID, announcementMessage.ID, "🟨")
 		s.MessageReactionAdd(m.ChannelID, announcementMessage.ID, "🟥")
+
+		announcementMessageID := announcementMessage.ID
+
+		//create ChallengeTableEntry
+		challengeTableEntry := initChallengeTableEntry(announcementMessageID, authorUserID, authorUsername, referencedAuthorID, referencedAuthorUsername)
+		insertChallengeRow(db, challengeTableEntry)
+		row, err := selectChallengeRow(db, announcementMessageID)
+		if err != nil {
+			log.Printf("Error %s while selecting challenge row", err)
+		}
+		printChallengeRow(row)
+	}
+}
+
+//trigger>response for messagereactionadd events
+func messageReactionCreate(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
+	reactionEmoji := r.Emoji.Name
+	messageID := r.MessageID
+	reactionAuthorID := r.UserID
+
+	//ignore all reactions created by the bot itself
+	if r.UserID == s.State.User.ID {
+		return
 	}
 
+	if reactionEmoji == "🛹" {
+		log.Println("Skateboard detected")
+	}
+
+	if reactionEmoji == "🟦" {
+		//connect to challengeDB
+		db, err := dbConnection()
+		if err != nil {
+			log.Printf("Error %s when getting database connection", err)
+			return
+		}
+		defer db.Close()
+		votingRecordEntry, err := selectVotingRecordRow(db, reactionAuthorID, messageID)
+		if hasVotedBlue(db, votingRecordEntry) {
+			log.Println("User has voted already")
+			return
+		}
+		if !hasVotedBlue(db, votingRecordEntry) && !hasVotedRed(db, votingRecordEntry) && !hasVotedYellow(db, votingRecordEntry) {
+			votingRecordEntry.UserID = reactionAuthorID
+			votingRecordEntry.MessageID = messageID
+			insertVotingRecordRow(db, votingRecordEntry)
+		}
+		votingRecordEntry.ChallengerVotes = 1
+		updateVotingRecord(db, votingRecordEntry)
+		votes, err := selectVotes(db, messageID)
+		if err != nil {
+			log.Printf("Error %s while selecting votes", err)
+			return
+		}
+		ChallengerVotes := votes.ChallengerVotes + 1
+		DefenderVotes := votes.DefenderVotes
+		AbstainVotes := votes.AbstainVotes
+		updatedVotes := VotesStruct{ChallengerVotes, DefenderVotes, AbstainVotes}
+		updateVotes(db, messageID, updatedVotes)
+		votes, err = selectVotes(db, messageID)
+		if err != nil {
+			log.Printf("Error %s while selecting votes", err)
+			return
+		}
+		updateOutcome(db, messageID, votes)
+		row, err := selectChallengeRow(db, messageID)
+		printChallengeRow(row)
+	}
+
+	if reactionEmoji == "🟨" {
+		//connect to challengeDB
+		db, err := dbConnection()
+		if err != nil {
+			log.Printf("Error %s when getting database connection", err)
+			return
+		}
+		defer db.Close()
+		votingRecordEntry, err := selectVotingRecordRow(db, reactionAuthorID, messageID)
+		if hasVotedBlue(db, votingRecordEntry) {
+			log.Println("User has voted already")
+			return
+		}
+		if !hasVotedBlue(db, votingRecordEntry) && !hasVotedRed(db, votingRecordEntry) && !hasVotedYellow(db, votingRecordEntry) {
+			votingRecordEntry.UserID = reactionAuthorID
+			votingRecordEntry.MessageID = messageID
+			insertVotingRecordRow(db, votingRecordEntry)
+		}
+		votingRecordEntry.ChallengerVotes = 1
+		updateVotingRecord(db, votingRecordEntry)
+		votes, err := selectVotes(db, messageID)
+		if err != nil {
+			log.Printf("Error %s while selecting votes", err)
+			return
+		}
+		ChallengerVotes := votes.ChallengerVotes
+		DefenderVotes := votes.DefenderVotes + 1
+		AbstainVotes := votes.AbstainVotes
+		updatedVotes := VotesStruct{ChallengerVotes, DefenderVotes, AbstainVotes}
+		updateVotes(db, messageID, updatedVotes)
+		votes, err = selectVotes(db, messageID)
+		if err != nil {
+			log.Printf("Error %s while selecting votes", err)
+			return
+		}
+		updateOutcome(db, messageID, votes)
+		row, err := selectChallengeRow(db, messageID)
+		printChallengeRow(row)
+	}
+
+	if reactionEmoji == "🟥" {
+		//connect to challengeDB
+		db, err := dbConnection()
+		if err != nil {
+			log.Printf("Error %s when getting database connection", err)
+			return
+		}
+		defer db.Close()
+		votingRecordEntry, err := selectVotingRecordRow(db, reactionAuthorID, messageID)
+		if hasVotedBlue(db, votingRecordEntry) {
+			log.Println("User has voted already")
+			return
+		}
+		if !hasVotedBlue(db, votingRecordEntry) && !hasVotedRed(db, votingRecordEntry) && !hasVotedYellow(db, votingRecordEntry) {
+			votingRecordEntry.UserID = reactionAuthorID
+			votingRecordEntry.MessageID = messageID
+			insertVotingRecordRow(db, votingRecordEntry)
+		}
+		votingRecordEntry.ChallengerVotes = 1
+		updateVotingRecord(db, votingRecordEntry)
+		votes, err := selectVotes(db, messageID)
+		if err != nil {
+			log.Printf("Error %s while selecting votes", err)
+			return
+		}
+		ChallengerVotes := votes.ChallengerVotes
+		DefenderVotes := votes.DefenderVotes
+		AbstainVotes := votes.AbstainVotes + 1
+		updatedVotes := VotesStruct{ChallengerVotes, DefenderVotes, AbstainVotes}
+		updateVotes(db, messageID, updatedVotes)
+		votes, err = selectVotes(db, messageID)
+		if err != nil {
+			log.Printf("Error %s while selecting votes", err)
+			return
+		}
+		updateOutcome(db, messageID, votes)
+		row, err := selectChallengeRow(db, messageID)
+		printChallengeRow(row)
+	}
 }
 
 func main() {
@@ -333,7 +572,7 @@ func main() {
 		fmt.Println("Error creating Discord session,", err)
 		return
 	}
-	dg.Identify.Intents = discordgo.IntentsGuildMessages
+	dg.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentGuildMessageReactions
 	//open a websocket connection to Discord and begin listening
 	err = dg.Open()
 	if err != nil {
@@ -359,10 +598,15 @@ func main() {
 		log.Printf("createScoreboardTable failed with error %s", err)
 		return
 	}
+	err = createVotingRecord(db)
+	if err != nil {
+		log.Printf("createVotingRecord failed with error %s", err)
+		return
+	}
 
 	//register messageCreate function as a callback for MessageCreate events
 	dg.AddHandler(messageCreate)
-	// dg.AddHandler(messageReactionCreate)
+	dg.AddHandler(messageReactionCreate)
 
 	//everything runs here until one of the term signals is received
 	fmt.Println("Bot is now running. Press CTRL-C to exit.")
