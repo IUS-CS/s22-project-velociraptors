@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -25,14 +26,17 @@ var (
 
 const (
 	//test
-	testTrigger  = "Does the bot work?"
-	testResponse = "Vinny is alive and well."
+	testTrigger   = "!test"
+	testTrigger2  = "!test2"
+	testResponse  = "This is a statement you might disagree with."
+	testResponse2 = "This is another statement you might disagree with."
 
 	//for sqlite
 	dbname = "scoreboardDB"
 
 	//bot commands
-	commandChallenge = "!challenge"
+	commandChallenge  = "!challenge"
+	commandCheckScore = "!checkscore"
 
 	//bot messages
 	challengeMessage1 = " has challenged "
@@ -40,6 +44,9 @@ const (
 	challengeMessage3 = "\n\n🟦 = "
 	challengeMessage4 = "\n🟨 = "
 	challengeMessage5 = "\n🟥 = Abstain"
+
+	//values
+	maxIDLength = 18
 )
 
 //ChallengeTableEntryStruct fields
@@ -56,20 +63,18 @@ type ChallengeTableEntryStruct struct {
 	//0=tie, 1=challenger wins, 2=defender wins
 }
 
-//scoreboardTableEntryStruct fields, ready to be implemented with scoreboardTableEntry
-
-// type scoreboardTableEntryStruct struct {
-// 	UserID               string
-// 	Username             string
-// 	TotalChallengeWins   int
-// 	TotalChallengeLosses int
-// 	TotalChallengeTies   int
-// 	TotalChallenges      int
-// 	SuccessfulChallenges int
-// 	FailedChallenges     int
-// 	SuccessfulDefenses   int
-// 	FailedDefenses       int
-// }
+type ScoreboardTableEntryStruct struct {
+	UserID               string `db:"UserID"`
+	Username             string `db:"Username"`
+	TotalChallengeWins   int    `db:"TotalChallengeWins"`
+	TotalChallengeLosses int    `db:"TotalChallengeLosses"`
+	TotalChallengeTies   int    `db:"TotalChallengeTies"`
+	TotalChallenges      int    `db:"TotalChallenges"`
+	SuccessfulChallenges int    `db:"SuccessfulChallenges"`
+	FailedChallenges     int    `db:"FailedChallenges"`
+	SuccessfulDefenses   int    `db:"SuccessfulDefenses"`
+	FailedDefenses       int    `db:"FailedDefenses"`
+}
 
 type VotingRecordEntryStruct struct {
 	UserID          string `db:"UserID"`
@@ -150,7 +155,7 @@ func initChallengeTableEntry(messageID string, authorUserID string, authorUserna
 		ChallengerVotes: 0,
 		DefenderVotes:   0,
 		AbstainVotes:    0,
-		Outcome:         3,
+		Outcome:         0,
 	}
 	return ChallengeTableEntry
 }
@@ -203,7 +208,7 @@ func updateOutcome(db *sqlx.DB, MessageID string, votes VotesStruct) {
 		res, err = stmt.Exec(2, MessageID)
 	}
 	if votes.ChallengerVotes == votes.DefenderVotes {
-		res, err = stmt.Exec(3, MessageID)
+		res, err = stmt.Exec(0, MessageID)
 	}
 	if err != nil {
 		log.Printf("Error %s while executing updateVotes query", err)
@@ -220,7 +225,7 @@ func updateOutcome(db *sqlx.DB, MessageID string, votes VotesStruct) {
 
 //this table stores results of challenge votes
 func createScoreboardTable(db *sqlx.DB) error {
-	query := "CREATE TABLE IF NOT EXISTS scoreboardTable(UserID text primary key, Username text, TotalChallengeWins int, TotalChallengeLosses int, TotalChallenges int, SuccessfulChallenges int, FailedChallenges int, SuccessfulDefenses int, FailedDefenses int)"
+	query := "CREATE TABLE IF NOT EXISTS scoreboardTable(UserID text primary key, Username text, TotalChallengeWins int, TotalChallengeLosses int, TotalChallengeTies int, TotalChallenges int, SuccessfulChallenges int, FailedChallenges int, SuccessfulDefenses int, FailedDefenses int)"
 	ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelfunc()
 	res, err := db.ExecContext(ctx, query)
@@ -235,6 +240,86 @@ func createScoreboardTable(db *sqlx.DB) error {
 	}
 	log.Printf("%d rows affected when creating scoreboardTable", rows)
 	return nil
+}
+
+func insertScoreboardRow(db *sqlx.DB, row ScoreboardTableEntryStruct) {
+	query := "INSERT OR IGNORE INTO scoreboardTable (UserID, Username, TotalChallengeWins, TotalChallengeLosses, TotalChallengeTies, TotalChallenges, SuccessfulChallenges, FailedChallenges, SuccessfulDefenses, FailedDefenses) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+	stmt, err := db.Prepare(query)
+	if err != nil {
+		log.Printf("Error %s while preparing insertScoreboardRow query", err)
+		return
+	}
+	res, err := stmt.Exec(row.UserID, row.Username, row.TotalChallengeWins, row.TotalChallengeLosses, row.TotalChallengeTies, row.TotalChallenges, row.SuccessfulChallenges, row.FailedChallenges, row.SuccessfulDefenses, row.FailedDefenses)
+	if err != nil {
+		log.Printf("Error %s while executing insertScoreboardRow query", err)
+		return
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		log.Printf("Error %s when fetching rows affected during insertScoreboardRow", err)
+		return
+	}
+	log.Printf("%d rows affected when inserting scoreboard row", rows)
+	return
+}
+
+func initScoreBoardRow(userID string, username string) ScoreboardTableEntryStruct {
+	scoreboardTableEntry := ScoreboardTableEntryStruct{userID, username, 0, 0, 0, 0, 0, 0, 0, 0}
+	return scoreboardTableEntry
+}
+
+func selectScoreboardRow(db *sqlx.DB, UserID string) (ScoreboardTableEntryStruct, error) {
+	scoreboardRow := ScoreboardTableEntryStruct{}
+	err := db.Get(&scoreboardRow, "SELECT UserID, Username, TotalChallengeWins, TotalChallengeLosses, TotalChallengeTies, TotalChallenges, SuccessfulChallenges, FailedChallenges, SuccessfulDefenses, FailedDefenses FROM scoreboardTable WHERE UserID = ?", UserID)
+	return scoreboardRow, err
+}
+
+func updateScoreboard(db *sqlx.DB, scoreboardEntry ScoreboardTableEntryStruct) {
+	query := "UPDATE scoreboardTable SET UserID = ?, Username = ?, TotalChallengeWins = ?, TotalChallengeLosses = ?, TotalChallengeTies = ?, TotalChallenges = ?, SuccessfulChallenges = ?, FailedChallenges = ?, SuccessfulDefenses = ?, FailedDefenses = ? WHERE UserID = ?"
+	stmt, err := db.Prepare(query)
+	if err != nil {
+		log.Printf("Error %s while preparing updateScoreboard query", err)
+		return
+	}
+	res, err := stmt.Exec(scoreboardEntry.UserID, scoreboardEntry.Username, scoreboardEntry.TotalChallengeWins, scoreboardEntry.TotalChallengeLosses, scoreboardEntry.TotalChallengeTies, scoreboardEntry.TotalChallenges, scoreboardEntry.SuccessfulChallenges, scoreboardEntry.FailedChallenges, scoreboardEntry.SuccessfulDefenses, scoreboardEntry.FailedDefenses, scoreboardEntry.UserID)
+	if err != nil {
+		log.Printf("Error %s while executing updateScoreboard query", err)
+		return
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		log.Printf("Error %s when fetching rows affected during updateScoreboard", err)
+		return
+	}
+	log.Printf("%d rows affected when updating scoreboard", rows)
+	printScoreboardRow(scoreboardEntry)
+	return
+}
+
+func userInScoreboard(db *sqlx.DB, UserID string) bool {
+	query := "SELECT UserID FROM scoreboardTable WHERE UserID = ?"
+	row := db.QueryRow(query, UserID)
+	temp := ""
+	row.Scan(&temp)
+	if temp != "" {
+		return true
+	}
+	return false
+}
+
+func winnerID(db *sqlx.DB, score ChallengeTableEntryStruct) string {
+	if score.Outcome == 1 {
+		return score.ChallengerID
+	}
+	if score.Outcome == 2 {
+		return score.DefenderID
+	}
+	return "tie"
+}
+
+func scoreboardToString(s ScoreboardTableEntryStruct) string {
+	score := "`" + s.Username + "\nTotal challenge wins: " + strconv.Itoa(s.TotalChallengeWins) + "\nTotal challenge losses: " + strconv.Itoa(s.TotalChallengeLosses) + "\nTotal challenge ties: " + strconv.Itoa(s.TotalChallengeTies) + "\nTotal challenges: " + strconv.Itoa(s.TotalChallenges) + "\nWins as challenger: " + strconv.Itoa(s.SuccessfulChallenges) + "\nLosses as challenger: " + strconv.Itoa(s.FailedChallenges) + "\nWins as defender: " + strconv.Itoa(s.SuccessfulDefenses) + "\nLosses as defender: " + strconv.Itoa(s.FailedDefenses) + "`"
+	return score
 }
 
 //this table stores users' votes on each challenge
@@ -363,6 +448,48 @@ func hasVotedRed(db *sqlx.DB, VotingRecordEntry VotingRecordEntryStruct) bool {
 	return false
 }
 
+func pushScore(db *sqlx.DB, challengeEntry ChallengeTableEntryStruct) {
+	challengerID := challengeEntry.ChallengerID
+	defenderID := challengeEntry.DefenderID
+	challengerScoreboardRow, err := selectScoreboardRow(db, challengerID)
+	if err != nil {
+		log.Printf("Error %s while selecting challenger scoreboardRow for pushScore", err)
+	}
+	defenderScoreboardRow, err := selectScoreboardRow(db, defenderID)
+	if err != nil {
+		log.Printf("Error %s while selecting defender scoreboardRow for pushScore", err)
+	}
+	if challengeEntry.Outcome == 1 {
+		challengerScoreboardRow.SuccessfulChallenges += 1
+		challengerScoreboardRow.TotalChallengeWins += 1
+		challengerScoreboardRow.TotalChallenges += 1
+		defenderScoreboardRow.TotalChallengeLosses += 1
+		defenderScoreboardRow.FailedDefenses += 1
+		defenderScoreboardRow.TotalChallenges += 1
+		updateScoreboard(db, challengerScoreboardRow)
+		updateScoreboard(db, defenderScoreboardRow)
+	}
+	if challengeEntry.Outcome == 2 {
+		defenderScoreboardRow.SuccessfulDefenses += 1
+		defenderScoreboardRow.TotalChallengeWins += 1
+		defenderScoreboardRow.TotalChallenges += 1
+		challengerScoreboardRow.FailedChallenges += 1
+		challengerScoreboardRow.TotalChallengeLosses += 1
+		challengerScoreboardRow.TotalChallenges += 1
+		updateScoreboard(db, challengerScoreboardRow)
+		updateScoreboard(db, defenderScoreboardRow)
+	}
+	if challengeEntry.Outcome == 0 {
+		challengerScoreboardRow.TotalChallengeTies += 1
+		challengerScoreboardRow.TotalChallenges += 1
+		defenderScoreboardRow.TotalChallengeTies += 1
+		defenderScoreboardRow.TotalChallenges += 1
+		updateScoreboard(db, challengerScoreboardRow)
+		updateScoreboard(db, defenderScoreboardRow)
+	}
+	return
+}
+
 //print in terminal
 
 func printChallengeRow(row ChallengeTableEntryStruct) {
@@ -397,6 +524,21 @@ func printVotingRecordRow(v VotingRecordEntryStruct) {
 	log.Println(UserID + s + MessageID + s + ChallengerVotes + s + DefenderVotes + s + AbstainVotes)
 }
 
+func printScoreboardRow(r ScoreboardTableEntryStruct) {
+	UserID := r.UserID
+	Username := r.Username
+	TotalChallengeWins := strconv.Itoa(r.TotalChallengeWins)
+	TotalChallengeLosses := strconv.Itoa(r.TotalChallengeLosses)
+	TotalChallengeTies := strconv.Itoa(r.TotalChallengeTies)
+	TotalChallenges := strconv.Itoa(r.TotalChallenges)
+	SuccessfulChallenges := strconv.Itoa(r.SuccessfulChallenges)
+	FailedChallenges := strconv.Itoa(r.FailedChallenges)
+	SuccessfulDefenses := strconv.Itoa(r.SuccessfulDefenses)
+	FailedDefenses := strconv.Itoa(r.FailedDefenses)
+	s := "-"
+	log.Println(UserID + s + Username + s + TotalChallengeWins + s + TotalChallengeLosses + s + TotalChallengeTies + s + TotalChallenges + s + SuccessfulChallenges + s + FailedChallenges + s + SuccessfulDefenses + s + FailedDefenses)
+}
+
 //trigger>response for messagecreate events
 func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
@@ -407,6 +549,10 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	//follow this format (EqualFold compares strings, ignores case and returns True if they are equal):
 	if strings.EqualFold(messageContent, testTrigger) {
 		s.ChannelMessageSend(m.ChannelID, testResponse)
+	}
+
+	if strings.EqualFold(messageContent, testTrigger2) {
+		s.ChannelMessageSend(m.ChannelID, testResponse2)
 	}
 
 	//!challenge
@@ -436,7 +582,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		s.MessageReactionAdd(m.ChannelID, announcementMessage.ID, "🟦")
 		s.MessageReactionAdd(m.ChannelID, announcementMessage.ID, "🟨")
 		s.MessageReactionAdd(m.ChannelID, announcementMessage.ID, "🟥")
-
+		s.MessageReactionAdd(m.ChannelID, announcementMessage.ID, "✋")
 		announcementMessageID := announcementMessage.ID
 
 		//create ChallengeTableEntry
@@ -447,7 +593,41 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			log.Printf("Error %s while selecting challenge row", err)
 		}
 		printChallengeRow(row)
+
+		//createScoreboardTableEntry x2 (one for challenger, one for defender)
+		if !userInScoreboard(db, authorUserID) {
+			scoreboardRow := initScoreBoardRow(authorUserID, authorUsername)
+			insertScoreboardRow(db, scoreboardRow)
+		}
+
+		if !userInScoreboard(db, referencedAuthorID) {
+			scoreboardRow := initScoreBoardRow(referencedAuthorID, referencedAuthorUsername)
+			insertScoreboardRow(db, scoreboardRow)
+		}
 	}
+
+	//!checkscore @username
+	//connect to challengeDB
+	db, err := dbConnection()
+	if err != nil {
+		log.Printf("Error %s when getting database connection", err)
+		return
+	}
+	defer db.Close()
+	var RegexUserPatternID *regexp.Regexp = regexp.MustCompile(fmt.Sprintf(`^(<@!(\d{%d,})>)$`, maxIDLength))
+	parameters := strings.Split(messageContent, " ")
+	if strings.EqualFold(parameters[0], commandCheckScore) && RegexUserPatternID.MatchString(parameters[1]) {
+		mentionedUser := parameters[1]
+		re, err := regexp.Compile(`[^\w]`)
+		if err != nil {
+			log.Fatal(err)
+		}
+		mentionedUser = re.ReplaceAllString(mentionedUser, "")
+		mentionedScoreboard, err := selectScoreboardRow(db, mentionedUser)
+		output := "<@" + mentionedUser + "> has the following challenge record:\n" + scoreboardToString(mentionedScoreboard)
+		s.ChannelMessageSend(m.ChannelID, output)
+	}
+
 }
 
 //trigger>response for messagereactionadd events
@@ -583,6 +763,37 @@ func messageReactionCreate(s *discordgo.Session, r *discordgo.MessageReactionAdd
 		updateOutcome(db, messageID, votes)
 		row, err := selectChallengeRow(db, messageID)
 		printChallengeRow(row)
+	}
+
+	if reactionEmoji == "✋" {
+		db, err := dbConnection()
+		if err != nil {
+			log.Printf("Error %s when getting database connection", err)
+			return
+		}
+		defer db.Close()
+		challengeEntry, err := selectChallengeRow(db, messageID)
+		if err != nil {
+			log.Printf("Error %s selecting challenge row in stop reaction", err)
+			return
+		}
+		pushScore(db, challengeEntry)
+		winnerIsChallenger := "\n<@" + challengeEntry.ChallengerID + "> has won the challenge!\n\nThe score was: " + strconv.Itoa(challengeEntry.ChallengerVotes) + " to " + strconv.Itoa(challengeEntry.DefenderVotes)
+		winnerIsDefender := "\n<@" + challengeEntry.DefenderID + "> has won the challenge!\n\nThe score was: " + strconv.Itoa(challengeEntry.DefenderVotes) + " to " + strconv.Itoa(challengeEntry.ChallengerVotes)
+		tie := "\nThe challenge between <@" + challengeEntry.ChallengerID + "> and <@" + challengeEntry.DefenderID + "> was a tie!"
+		challengerRow, err := selectScoreboardRow(db, challengeEntry.ChallengerID)
+		printScoreboardRow(challengerRow)
+		defenderRow, err := selectScoreboardRow(db, challengeEntry.DefenderID)
+		printScoreboardRow(defenderRow)
+		if winnerID(db, challengeEntry) == "tie" {
+			s.ChannelMessageSend(r.ChannelID, tie)
+		}
+		if winnerID(db, challengeEntry) == challengeEntry.ChallengerID {
+			s.ChannelMessageSend(r.ChannelID, winnerIsChallenger)
+		}
+		if winnerID(db, challengeEntry) == challengeEntry.DefenderID {
+			s.ChannelMessageSend(r.ChannelID, winnerIsDefender)
+		}
 	}
 }
 
