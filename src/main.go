@@ -82,8 +82,8 @@ type VotingRecordEntryStruct struct {
 	MessageID       string `db:"MessageID"`
 	ChallengerVotes int    `db:"ChallengerVotes"`
 	DefenderVotes   int    `db:"DefenderVotes"`
-	StopVotes       int    `db:"StopVotes"`
 	AbstainVotes    int    `db:"AbstainVotes"`
+	StopVotes       int    `db:"StopVotes"`
 }
 
 type VotesStruct struct {
