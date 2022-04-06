@@ -22,7 +22,7 @@ Assign token variable
     export BOT_TOKEN=<TOKEN GOES HERE!!!!!>
 
     For Windows:
-    set BOT_TOKEN=<TOKEN GOES HERE!!!!!>
+    Set-Variable -Name "BOT_TOKEN" -Value "<TOKEN GOES HERE!!!!!>"
 
 Windows users download C compiler:
 
