@@ -20,9 +20,8 @@ import (
 )
 
 //variables used for command line parameters
-var (
-	Token string
-)
+var Token string
+var RegexUserPatternID *regexp.Regexp = regexp.MustCompile(fmt.Sprintf(`^(<@!(\d{%d,})>)$`, maxIDLength))
 
 const (
 	//test
@@ -44,6 +43,7 @@ const (
 	challengeMessage3 = "\n\n🟦 = "
 	challengeMessage4 = "\n🟨 = "
 	challengeMessage5 = "\n🟥 = Abstain"
+	challengeMessage6 = "\n✋  = Close Voting"
 
 	//values
 	maxIDLength = 18
@@ -59,6 +59,7 @@ type ChallengeTableEntryStruct struct {
 	ChallengerVotes int    `db:"ChallengerVotes"`
 	DefenderVotes   int    `db:"DefenderVotes"`
 	AbstainVotes    int    `db:"AbstainVotes"`
+	StopVotes       int    `db:"StopVotes"`
 	Outcome         int    `db:"Outcome"`
 	//0=tie, 1=challenger wins, 2=defender wins
 }
@@ -82,12 +83,14 @@ type VotingRecordEntryStruct struct {
 	ChallengerVotes int    `db:"ChallengerVotes"`
 	DefenderVotes   int    `db:"DefenderVotes"`
 	AbstainVotes    int    `db:"AbstainVotes"`
+	StopVotes       int    `db:"StopVotes"`
 }
 
 type VotesStruct struct {
 	ChallengerVotes int `db:"ChallengerVotes"`
 	DefenderVotes   int `db:"DefenderVotes"`
 	AbstainVotes    int `db:"AbstainVotes"`
+	StopVotes       int `db:"StopVotes"`
 }
 
 func init() {
@@ -107,7 +110,7 @@ func dbConnection() (*sqlx.DB, error) {
 
 //this table stores values for challenge votes
 func createChallengeTable(db *sqlx.DB) error {
-	query := "CREATE TABLE IF NOT EXISTS challengeTable(MessageID string primary key, ChallengerID text, ChallengerName text, DefenderID text, DefenderName text, ChallengerVotes int, DefenderVotes int, AbstainVotes int, Outcome int)"
+	query := "CREATE TABLE IF NOT EXISTS challengeTable(MessageID string primary key, ChallengerID text, ChallengerName text, DefenderID text, DefenderName text, ChallengerVotes int, DefenderVotes int, AbstainVotes int, StopVotes int, Outcome int)"
 	ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelfunc()
 	res, err := db.ExecContext(ctx, query)
@@ -125,13 +128,13 @@ func createChallengeTable(db *sqlx.DB) error {
 }
 
 func insertChallengeRow(db *sqlx.DB, row ChallengeTableEntryStruct) {
-	query := "INSERT INTO challengeTable (MessageID, ChallengerID, ChallengerName, DefenderID, DefenderName, ChallengerVotes, DefenderVotes, AbstainVotes, Outcome) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+	query := "INSERT INTO challengeTable (MessageID, ChallengerID, ChallengerName, DefenderID, DefenderName, ChallengerVotes, DefenderVotes, AbstainVotes, StopVotes, Outcome) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 	stmt, err := db.Prepare(query)
 	if err != nil {
 		log.Printf("Error %s while preparing insertChallengeRow query", err)
 		return
 	}
-	res, err := stmt.Exec(row.MessageID, row.ChallengerID, row.ChallengerName, row.DefenderID, row.DefenderName, row.ChallengerVotes, row.DefenderVotes, row.AbstainVotes, row.Outcome)
+	res, err := stmt.Exec(row.MessageID, row.ChallengerID, row.ChallengerName, row.DefenderID, row.DefenderName, row.ChallengerVotes, row.DefenderVotes, row.AbstainVotes, row.StopVotes, row.Outcome)
 	if err != nil {
 		log.Printf("Error %s while executing insertChallengeRow query", err)
 		return
@@ -155,6 +158,7 @@ func initChallengeTableEntry(messageID string, authorUserID string, authorUserna
 		ChallengerVotes: 0,
 		DefenderVotes:   0,
 		AbstainVotes:    0,
+		StopVotes:       0,
 		Outcome:         0,
 	}
 	return ChallengeTableEntry
@@ -162,24 +166,24 @@ func initChallengeTableEntry(messageID string, authorUserID string, authorUserna
 
 func selectChallengeRow(db *sqlx.DB, MessageID string) (ChallengeTableEntryStruct, error) {
 	challengeRow := ChallengeTableEntryStruct{}
-	err := db.Get(&challengeRow, "SELECT MessageID, ChallengerID, ChallengerName, DefenderID, DefenderName, ChallengerVotes, DefenderVotes, AbstainVotes, Outcome FROM challengeTable WHERE MessageID = ?", MessageID)
+	err := db.Get(&challengeRow, "SELECT MessageID, ChallengerID, ChallengerName, DefenderID, DefenderName, ChallengerVotes, DefenderVotes, AbstainVotes, StopVotes, Outcome FROM challengeTable WHERE MessageID = ?", MessageID)
 	return challengeRow, err
 }
 
 func selectVotes(db *sqlx.DB, MessageID string) (VotesStruct, error) {
 	votes := VotesStruct{}
-	err := db.Get(&votes, "SELECT ChallengerVotes, DefenderVotes, AbstainVotes FROM challengeTable WHERE MessageID = ?", MessageID)
+	err := db.Get(&votes, "SELECT ChallengerVotes, DefenderVotes, AbstainVotes, StopVotes FROM challengeTable WHERE MessageID = ?", MessageID)
 	return votes, err
 }
 
 func updateVotes(db *sqlx.DB, MessageID string, votes VotesStruct) {
-	query := "UPDATE challengeTable SET ChallengerVotes = ?, DefenderVotes = ?, AbstainVotes = ? WHERE MessageID = ?"
+	query := "UPDATE challengeTable SET ChallengerVotes = ?, DefenderVotes = ?, AbstainVotes = ?, StopVotes = ? WHERE MessageID = ?"
 	stmt, err := db.Prepare(query)
 	if err != nil {
 		log.Printf("Error %s while preparing updateVotes query", err)
 		return
 	}
-	res, err := stmt.Exec(votes.ChallengerVotes, votes.DefenderVotes, votes.AbstainVotes, MessageID)
+	res, err := stmt.Exec(votes.ChallengerVotes, votes.DefenderVotes, votes.AbstainVotes, votes.StopVotes, MessageID)
 	if err != nil {
 		log.Printf("Error %s while executing updateVotes query", err)
 		return
@@ -324,7 +328,7 @@ func scoreboardToString(s ScoreboardTableEntryStruct) string {
 
 //this table stores users' votes on each challenge
 func createVotingRecord(db *sqlx.DB) error {
-	query := "CREATE TABLE IF NOT EXISTS votingRecord(UserID text, MessageID text, ChallengerVotes int, DefenderVotes int, AbstainVotes int, PRIMARY KEY (UserID, MessageID))"
+	query := "CREATE TABLE IF NOT EXISTS votingRecord(UserID text, MessageID text, ChallengerVotes int, DefenderVotes int, AbstainVotes int, StopVotes int, PRIMARY KEY (UserID, MessageID))"
 	ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelfunc()
 	res, err := db.ExecContext(ctx, query)
@@ -342,13 +346,13 @@ func createVotingRecord(db *sqlx.DB) error {
 }
 
 func insertVotingRecordRow(db *sqlx.DB, row VotingRecordEntryStruct) {
-	query := "INSERT OR IGNORE INTO votingRecord (UserID, MessageID, ChallengerVotes, DefenderVotes, AbstainVotes) VALUES (?, ?, ?, ?, ?)"
+	query := "INSERT OR IGNORE INTO votingRecord (UserID, MessageID, ChallengerVotes, DefenderVotes, AbstainVotes, StopVotes) VALUES (?, ?, ?, ?, ?, ?)"
 	stmt, err := db.Prepare(query)
 	if err != nil {
 		log.Printf("Error %s while preparing insertVotingRecordRow query", err)
 		return
 	}
-	res, err := stmt.Exec(row.UserID, row.MessageID, row.ChallengerVotes, row.DefenderVotes, row.AbstainVotes)
+	res, err := stmt.Exec(row.UserID, row.MessageID, row.ChallengerVotes, row.DefenderVotes, row.AbstainVotes, row.StopVotes)
 	if err != nil {
 		log.Printf("Error %s while executing insertVotingRecordRow query", err)
 		return
@@ -384,24 +388,24 @@ func removeVotingRecordRow(db *sqlx.DB, row VotingRecordEntryStruct) {
 }
 
 func initVotingRecordRow(authorUserID string, messageID string) VotingRecordEntryStruct {
-	VotingRecordEntry := VotingRecordEntryStruct{authorUserID, messageID, 0, 0, 0}
+	VotingRecordEntry := VotingRecordEntryStruct{authorUserID, messageID, 0, 0, 0, 0}
 	return VotingRecordEntry
 }
 
 func selectVotingRecordRow(db *sqlx.DB, UserID string, MessageID string) (VotingRecordEntryStruct, error) {
 	votingRecordRow := VotingRecordEntryStruct{}
-	err := db.Get(&votingRecordRow, "SELECT UserID, MessageID, ChallengerVotes, DefenderVotes, AbstainVotes FROM votingRecord WHERE UserID = ? AND MessageID = ?", UserID, MessageID)
+	err := db.Get(&votingRecordRow, "SELECT UserID, MessageID, ChallengerVotes, DefenderVotes, AbstainVotes, StopVotes FROM votingRecord WHERE UserID = ? AND MessageID = ?", UserID, MessageID)
 	return votingRecordRow, err
 }
 
 func updateVotingRecord(db *sqlx.DB, VotingRecordEntry VotingRecordEntryStruct) {
-	query := "UPDATE votingRecord SET ChallengerVotes = ?, DefenderVotes = ?, AbstainVotes = ? WHERE MessageID = ? AND UserID = ?"
+	query := "UPDATE votingRecord SET ChallengerVotes = ?, DefenderVotes = ?, AbstainVotes = ?, StopVotes = ? WHERE MessageID = ? AND UserID = ?"
 	stmt, err := db.Prepare(query)
 	if err != nil {
 		log.Printf("Error %s while preparing updateVotingRecord query", err)
 		return
 	}
-	res, err := stmt.Exec(VotingRecordEntry.ChallengerVotes, VotingRecordEntry.DefenderVotes, VotingRecordEntry.AbstainVotes, VotingRecordEntry.MessageID, VotingRecordEntry.UserID)
+	res, err := stmt.Exec(VotingRecordEntry.ChallengerVotes, VotingRecordEntry.DefenderVotes, VotingRecordEntry.AbstainVotes, VotingRecordEntry.StopVotes, VotingRecordEntry.MessageID, VotingRecordEntry.UserID)
 	if err != nil {
 		log.Printf("Error %s while executing updateVotingRecord query", err)
 		return
@@ -446,6 +450,29 @@ func hasVotedRed(db *sqlx.DB, VotingRecordEntry VotingRecordEntryStruct) bool {
 		return true
 	}
 	return false
+}
+
+func hasVotedStop(db *sqlx.DB, VotingRecordEntry VotingRecordEntryStruct) bool {
+	rec, err := selectVotingRecordRow(db, VotingRecordEntry.UserID, VotingRecordEntry.MessageID)
+	if err != nil {
+		return false
+	}
+	if rec.StopVotes > 0 {
+		return true
+	}
+	return false
+}
+
+func checkStopVotes(db *sqlx.DB, MessageID string) int {
+	stopVotes := -1
+	challengeRow, err := selectChallengeRow(db, MessageID)
+	if err != nil {
+		log.Printf("Error %s while selecting challenge row in checkStopVotes", err)
+		return stopVotes
+	}
+	stopVotes = challengeRow.StopVotes
+	return stopVotes
+
 }
 
 func pushScore(db *sqlx.DB, challengeEntry ChallengeTableEntryStruct) {
@@ -510,8 +537,9 @@ func printVotes(votes VotesStruct) {
 	ChallengerVotes := strconv.Itoa(votes.ChallengerVotes)
 	DefenderVotes := strconv.Itoa(votes.DefenderVotes)
 	AbstainVotes := strconv.Itoa(votes.AbstainVotes)
+	StopVotes := strconv.Itoa(votes.StopVotes)
 	s := "-"
-	log.Println(ChallengerVotes + s + DefenderVotes + s + AbstainVotes)
+	log.Println(ChallengerVotes + s + DefenderVotes + s + AbstainVotes + s + StopVotes)
 }
 
 func printVotingRecordRow(v VotingRecordEntryStruct) {
@@ -520,8 +548,9 @@ func printVotingRecordRow(v VotingRecordEntryStruct) {
 	ChallengerVotes := strconv.Itoa(v.ChallengerVotes)
 	DefenderVotes := strconv.Itoa(v.DefenderVotes)
 	AbstainVotes := strconv.Itoa(v.AbstainVotes)
+	StopVotes := strconv.Itoa(v.StopVotes)
 	s := "-"
-	log.Println(UserID + s + MessageID + s + ChallengerVotes + s + DefenderVotes + s + AbstainVotes)
+	log.Println(UserID + s + MessageID + s + ChallengerVotes + s + DefenderVotes + s + AbstainVotes + s + StopVotes)
 }
 
 func printScoreboardRow(r ScoreboardTableEntryStruct) {
@@ -572,7 +601,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 		challengerInfo := "<@" + authorUserID + ">" + challengeMessage1 + "<@" + referencedAuthorID + ">" + "!"
 		debate := "\n\n<@" + referencedAuthorID + ">" + " says: `" + m.ReferencedMessage.Content + "`\n\n<@" + authorUserID + "> disagrees!\n"
-		votingInfo := "\n" + challengeMessage2 + challengeMessage3 + "<@" + authorUserID + ">" + challengeMessage4 + "<@" + referencedAuthorID + ">" + challengeMessage5
+		votingInfo := "\n" + challengeMessage2 + challengeMessage3 + "<@" + authorUserID + ">" + challengeMessage4 + "<@" + referencedAuthorID + ">" + challengeMessage5 + challengeMessage6
 		fullChallengeMessage := challengerInfo + debate + votingInfo
 		announcementMessage, err := s.ChannelMessageSend(m.ChannelID, fullChallengeMessage)
 		if err != nil {
@@ -607,16 +636,15 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	//!checkscore @username
-	//connect to challengeDB
-	db, err := dbConnection()
-	if err != nil {
-		log.Printf("Error %s when getting database connection", err)
-		return
-	}
-	defer db.Close()
-	var RegexUserPatternID *regexp.Regexp = regexp.MustCompile(fmt.Sprintf(`^(<@!(\d{%d,})>)$`, maxIDLength))
 	parameters := strings.Split(messageContent, " ")
 	if strings.EqualFold(parameters[0], commandCheckScore) && RegexUserPatternID.MatchString(parameters[1]) {
+		//connect to challengeDB
+		db, err := dbConnection()
+		if err != nil {
+			log.Printf("Error %s when getting database connection", err)
+			return
+		}
+		defer db.Close()
 		mentionedUser := parameters[1]
 		re, err := regexp.Compile(`[^\w]`)
 		if err != nil {
@@ -653,6 +681,9 @@ func messageReactionCreate(s *discordgo.Session, r *discordgo.MessageReactionAdd
 			return
 		}
 		defer db.Close()
+		if checkStopVotes(db, messageID) == 2 {
+			return
+		}
 		votingRecordEntry, err := selectVotingRecordRow(db, reactionAuthorID, messageID)
 		if hasVotedBlue(db, votingRecordEntry) || hasVotedYellow(db, votingRecordEntry) || hasVotedRed(db, votingRecordEntry) {
 			log.Println("User has voted already")
@@ -673,7 +704,8 @@ func messageReactionCreate(s *discordgo.Session, r *discordgo.MessageReactionAdd
 		ChallengerVotes := votes.ChallengerVotes + 1
 		DefenderVotes := votes.DefenderVotes
 		AbstainVotes := votes.AbstainVotes
-		updatedVotes := VotesStruct{ChallengerVotes, DefenderVotes, AbstainVotes}
+		StopVotes := votes.StopVotes
+		updatedVotes := VotesStruct{ChallengerVotes, DefenderVotes, AbstainVotes, StopVotes}
 		updateVotes(db, messageID, updatedVotes)
 		votes, err = selectVotes(db, messageID)
 		if err != nil {
@@ -693,6 +725,9 @@ func messageReactionCreate(s *discordgo.Session, r *discordgo.MessageReactionAdd
 			return
 		}
 		defer db.Close()
+		if checkStopVotes(db, messageID) == 2 {
+			return
+		}
 		votingRecordEntry, err := selectVotingRecordRow(db, reactionAuthorID, messageID)
 		if hasVotedYellow(db, votingRecordEntry) || hasVotedBlue(db, votingRecordEntry) || hasVotedRed(db, votingRecordEntry) {
 			log.Println("User has voted already")
@@ -713,7 +748,8 @@ func messageReactionCreate(s *discordgo.Session, r *discordgo.MessageReactionAdd
 		ChallengerVotes := votes.ChallengerVotes
 		DefenderVotes := votes.DefenderVotes + 1
 		AbstainVotes := votes.AbstainVotes
-		updatedVotes := VotesStruct{ChallengerVotes, DefenderVotes, AbstainVotes}
+		StopVotes := votes.StopVotes
+		updatedVotes := VotesStruct{ChallengerVotes, DefenderVotes, AbstainVotes, StopVotes}
 		updateVotes(db, messageID, updatedVotes)
 		votes, err = selectVotes(db, messageID)
 		if err != nil {
@@ -733,6 +769,9 @@ func messageReactionCreate(s *discordgo.Session, r *discordgo.MessageReactionAdd
 			return
 		}
 		defer db.Close()
+		if checkStopVotes(db, messageID) == 2 {
+			return
+		}
 		votingRecordEntry, err := selectVotingRecordRow(db, reactionAuthorID, messageID)
 		if hasVotedRed(db, votingRecordEntry) || hasVotedBlue(db, votingRecordEntry) || hasVotedYellow(db, votingRecordEntry) {
 			log.Println("User has voted already")
@@ -753,7 +792,8 @@ func messageReactionCreate(s *discordgo.Session, r *discordgo.MessageReactionAdd
 		ChallengerVotes := votes.ChallengerVotes
 		DefenderVotes := votes.DefenderVotes
 		AbstainVotes := votes.AbstainVotes + 1
-		updatedVotes := VotesStruct{ChallengerVotes, DefenderVotes, AbstainVotes}
+		StopVotes := votes.StopVotes
+		updatedVotes := VotesStruct{ChallengerVotes, DefenderVotes, AbstainVotes, StopVotes}
 		updateVotes(db, messageID, updatedVotes)
 		votes, err = selectVotes(db, messageID)
 		if err != nil {
@@ -772,27 +812,49 @@ func messageReactionCreate(s *discordgo.Session, r *discordgo.MessageReactionAdd
 			return
 		}
 		defer db.Close()
+		if checkStopVotes(db, messageID) == 2 {
+			return
+		}
 		challengeEntry, err := selectChallengeRow(db, messageID)
 		if err != nil {
 			log.Printf("Error %s selecting challenge row in stop reaction", err)
 			return
 		}
-		pushScore(db, challengeEntry)
-		winnerIsChallenger := "\n<@" + challengeEntry.ChallengerID + "> has won the challenge!\n\nThe score was: " + strconv.Itoa(challengeEntry.ChallengerVotes) + " to " + strconv.Itoa(challengeEntry.DefenderVotes)
-		winnerIsDefender := "\n<@" + challengeEntry.DefenderID + "> has won the challenge!\n\nThe score was: " + strconv.Itoa(challengeEntry.DefenderVotes) + " to " + strconv.Itoa(challengeEntry.ChallengerVotes)
-		tie := "\nThe challenge between <@" + challengeEntry.ChallengerID + "> and <@" + challengeEntry.DefenderID + "> was a tie!"
-		challengerRow, err := selectScoreboardRow(db, challengeEntry.ChallengerID)
-		printScoreboardRow(challengerRow)
-		defenderRow, err := selectScoreboardRow(db, challengeEntry.DefenderID)
-		printScoreboardRow(defenderRow)
-		if winnerID(db, challengeEntry) == "tie" {
-			s.ChannelMessageSend(r.ChannelID, tie)
+		stopVotesTotal := checkStopVotes(db, messageID)
+		userVotingRecord, err := selectVotingRecordRow(db, reactionAuthorID, messageID)
+		challengeVotes, err := selectVotes(db, messageID)
+		if !hasVotedStop(db, userVotingRecord) {
+			userVotingRecord.StopVotes = 1
+			updateVotingRecord(db, userVotingRecord)
+			challengeVotes.StopVotes += 1
+			updateVotes(db, messageID, challengeVotes)
 		}
-		if winnerID(db, challengeEntry) == challengeEntry.ChallengerID {
-			s.ChannelMessageSend(r.ChannelID, winnerIsChallenger)
+		stopVotesTotal = checkStopVotes(db, messageID)
+		log.Println(strconv.Itoa(stopVotesTotal))
+		if stopVotesTotal != 2 {
+			return
 		}
-		if winnerID(db, challengeEntry) == challengeEntry.DefenderID {
-			s.ChannelMessageSend(r.ChannelID, winnerIsDefender)
+		if stopVotesTotal == 2 {
+			pushScore(db, challengeEntry)
+			winnerIsChallenger := "\n<@" + challengeEntry.ChallengerID + "> has won the challenge!\n\nThe score was: " + strconv.Itoa(challengeEntry.ChallengerVotes) + " to " + strconv.Itoa(challengeEntry.DefenderVotes)
+			winnerIsDefender := "\n<@" + challengeEntry.DefenderID + "> has won the challenge!\n\nThe score was: " + strconv.Itoa(challengeEntry.DefenderVotes) + " to " + strconv.Itoa(challengeEntry.ChallengerVotes)
+			tie := "\nThe challenge between <@" + challengeEntry.ChallengerID + "> and <@" + challengeEntry.DefenderID + "> was a tie!"
+			challengerRow, err := selectScoreboardRow(db, challengeEntry.ChallengerID)
+			if err != nil {
+				log.Printf("Error %s while selecting scoreboard row in stop reaction add", err)
+			}
+			printScoreboardRow(challengerRow)
+			defenderRow, err := selectScoreboardRow(db, challengeEntry.DefenderID)
+			printScoreboardRow(defenderRow)
+			if winnerID(db, challengeEntry) == "tie" {
+				s.ChannelMessageSend(r.ChannelID, tie)
+			}
+			if winnerID(db, challengeEntry) == challengeEntry.ChallengerID {
+				s.ChannelMessageSend(r.ChannelID, winnerIsChallenger)
+			}
+			if winnerID(db, challengeEntry) == challengeEntry.DefenderID {
+				s.ChannelMessageSend(r.ChannelID, winnerIsDefender)
+			}
 		}
 	}
 }
@@ -814,6 +876,9 @@ func messageReactionDelete(s *discordgo.Session, r *discordgo.MessageReactionRem
 			return
 		}
 		defer db.Close()
+		if checkStopVotes(db, messageID) == 2 {
+			return
+		}
 		votingRecordEntry, err := selectVotingRecordRow(db, reactionAuthorID, messageID)
 		if hasVotedBlue(db, votingRecordEntry) {
 			removeVotingRecordRow(db, votingRecordEntry)
@@ -825,7 +890,8 @@ func messageReactionDelete(s *discordgo.Session, r *discordgo.MessageReactionRem
 			ChallengerVotes := votes.ChallengerVotes - 1
 			DefenderVotes := votes.DefenderVotes
 			AbstainVotes := votes.AbstainVotes
-			updatedVotes := VotesStruct{ChallengerVotes, DefenderVotes, AbstainVotes}
+			StopVotes := votes.StopVotes
+			updatedVotes := VotesStruct{ChallengerVotes, DefenderVotes, AbstainVotes, StopVotes}
 			updateVotes(db, messageID, updatedVotes)
 			votes, err = selectVotes(db, messageID)
 			if err != nil {
@@ -845,6 +911,9 @@ func messageReactionDelete(s *discordgo.Session, r *discordgo.MessageReactionRem
 			return
 		}
 		defer db.Close()
+		if checkStopVotes(db, messageID) == 2 {
+			return
+		}
 		votingRecordEntry, err := selectVotingRecordRow(db, reactionAuthorID, messageID)
 		if hasVotedYellow(db, votingRecordEntry) {
 			removeVotingRecordRow(db, votingRecordEntry)
@@ -856,7 +925,8 @@ func messageReactionDelete(s *discordgo.Session, r *discordgo.MessageReactionRem
 			ChallengerVotes := votes.ChallengerVotes
 			DefenderVotes := votes.DefenderVotes - 1
 			AbstainVotes := votes.AbstainVotes
-			updatedVotes := VotesStruct{ChallengerVotes, DefenderVotes, AbstainVotes}
+			StopVotes := votes.StopVotes
+			updatedVotes := VotesStruct{ChallengerVotes, DefenderVotes, AbstainVotes, StopVotes}
 			updateVotes(db, messageID, updatedVotes)
 			votes, err = selectVotes(db, messageID)
 			if err != nil {
@@ -876,6 +946,9 @@ func messageReactionDelete(s *discordgo.Session, r *discordgo.MessageReactionRem
 			return
 		}
 		defer db.Close()
+		if checkStopVotes(db, messageID) == 2 {
+			return
+		}
 		votingRecordEntry, err := selectVotingRecordRow(db, reactionAuthorID, messageID)
 		if hasVotedRed(db, votingRecordEntry) {
 			removeVotingRecordRow(db, votingRecordEntry)
@@ -887,7 +960,8 @@ func messageReactionDelete(s *discordgo.Session, r *discordgo.MessageReactionRem
 			ChallengerVotes := votes.ChallengerVotes
 			DefenderVotes := votes.DefenderVotes
 			AbstainVotes := votes.AbstainVotes - 1
-			updatedVotes := VotesStruct{ChallengerVotes, DefenderVotes, AbstainVotes}
+			StopVotes := votes.StopVotes
+			updatedVotes := VotesStruct{ChallengerVotes, DefenderVotes, AbstainVotes, StopVotes}
 			updateVotes(db, messageID, updatedVotes)
 			votes, err = selectVotes(db, messageID)
 			if err != nil {
@@ -897,6 +971,60 @@ func messageReactionDelete(s *discordgo.Session, r *discordgo.MessageReactionRem
 			updateOutcome(db, messageID, votes)
 			row, err := selectChallengeRow(db, messageID)
 			printChallengeRow(row)
+		}
+	}
+
+	if reactionEmoji == "✋" {
+		db, err := dbConnection()
+		if err != nil {
+			log.Printf("Error %s when getting database connection", err)
+			return
+		}
+		defer db.Close()
+		if checkStopVotes(db, messageID) == 2 {
+			return
+		}
+		challengeEntry, err := selectChallengeRow(db, messageID)
+		if err != nil {
+			log.Printf("Error %s selecting challenge row in stop reaction", err)
+			return
+		}
+		userVotingRecord, err := selectVotingRecordRow(db, reactionAuthorID, messageID)
+		challengeVotes, err := selectVotes(db, messageID)
+		stopVotesTotal := checkStopVotes(db, messageID)
+		if hasVotedStop(db, userVotingRecord) {
+			log.Println(hasVotedStop(db, userVotingRecord))
+			userVotingRecord.StopVotes = 0
+			updateVotingRecord(db, userVotingRecord)
+			challengeVotes.StopVotes -= 1
+			updateVotes(db, messageID, challengeVotes)
+		}
+		stopVotesTotal = checkStopVotes(db, messageID)
+		log.Println(strconv.Itoa(stopVotesTotal))
+		if stopVotesTotal != 2 {
+			return
+		}
+		if stopVotesTotal == 2 {
+			pushScore(db, challengeEntry)
+			winnerIsChallenger := "\n<@" + challengeEntry.ChallengerID + "> has won the challenge!\n\nThe score was: " + strconv.Itoa(challengeEntry.ChallengerVotes) + " to " + strconv.Itoa(challengeEntry.DefenderVotes)
+			winnerIsDefender := "\n<@" + challengeEntry.DefenderID + "> has won the challenge!\n\nThe score was: " + strconv.Itoa(challengeEntry.DefenderVotes) + " to " + strconv.Itoa(challengeEntry.ChallengerVotes)
+			tie := "\nThe challenge between <@" + challengeEntry.ChallengerID + "> and <@" + challengeEntry.DefenderID + "> was a tie!"
+			challengerRow, err := selectScoreboardRow(db, challengeEntry.ChallengerID)
+			if err != nil {
+				log.Printf("Error %s while selecting scoreboard row in stop reaction add", err)
+			}
+			printScoreboardRow(challengerRow)
+			defenderRow, err := selectScoreboardRow(db, challengeEntry.DefenderID)
+			printScoreboardRow(defenderRow)
+			if winnerID(db, challengeEntry) == "tie" {
+				s.ChannelMessageSend(r.ChannelID, tie)
+			}
+			if winnerID(db, challengeEntry) == challengeEntry.ChallengerID {
+				s.ChannelMessageSend(r.ChannelID, winnerIsChallenger)
+			}
+			if winnerID(db, challengeEntry) == challengeEntry.DefenderID {
+				s.ChannelMessageSend(r.ChannelID, winnerIsDefender)
+			}
 		}
 	}
 }
