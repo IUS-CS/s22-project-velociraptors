@@ -1,13 +1,5 @@
+# Architecture
+## Discord Bot
+The Discord bot is an interface that allows the user to interact with two databases. One database holds vote data, the other database holds user data. The challenger user will ping the bot and the bot will send a message to another defending user the challenger has selected. Should the other user accept the challenge, the bot will record both users' data in a struct and make a public message for votes from the public to pick a winner. The bot will record the votes in another struct. Then the bot will enter the user data and vote data into a database and declare a winner.
 
-
-
-
-Create a new document that describes the architecture of your project. Store this file in /doc/architecture.md with Markdown formatting and include any external resources necessary. For example:
-
-Are you writing a game? Record how the various components/objects in your system will interact.
-
-Note: this can help you figure out how you will test those components if you can separate them from the game loop.
-
-Are you writing a website? Record a sample database schema, diagram of how the MVC components interact, or sequence diagram of the actions that happen with the website.
-
-Make liberal use of diagramming utilities to accomplish this task. If you can not easily create 10 diagrams detailing aspects of your application, you have not thought your application out. There is not a requirement to have perfect UML structures, but UML utilities may aid in this task. http://creately.com is a great resource for creating professional diagrams. The free version can export images.
+![Capture](https://user-images.githubusercontent.com/98437411/160332419-835da3d4-235f-41b1-a1f7-903a2567d9c4.PNG)
