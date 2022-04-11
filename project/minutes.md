@@ -70,3 +70,48 @@ Points | Story
 2      | propose features
 6      | feature implementation 
 6      | SQLite implimentation
+
+
+# Sprint 4 - Closing Minutes
+## 4/11/22
+
+This sprint, we completed
+* unit testing 
+* feature implementation
+* SQLite implimentation
+* Updating .gitignore
+
+### Retrospective
+
+What went well? - Communication/availability of team members.
+What can be improved? - We procrastinated more than we should have.
+What will we commit to improving next sprint? - Starting sooner on our tasks.
+
+Points | Story
+-------|--------
+2      | moving the functions from main into seperate files
+4      | error handling
+6      | adding packages
+
+
+
+# Sprint 5 - Closing Minutes
+## 4/11/22
+
+This sprint, we completed
+* Moving functions over to diffrent .go files 
+* error handling
+* Added packages
+* Updating .gitignore
+
+### Retrospective
+
+What went well? - The amount of work that has been done in the amount of time between sprint 4 and 5.
+What can be improved? - overall comunication on what tasks team members are asked to do.
+What will we commit to improving next sprint? - communication
+
+Points | Story
+-------|--------
+4      | finalizing project
+2      | final additions
+6      | final touchups 
