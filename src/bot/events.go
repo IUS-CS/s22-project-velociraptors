@@ -2,12 +2,13 @@ package db
 
 import (
 	"fmt"
-	"github.com/bwmarrin/discordgo"
-	"github.com/jmoiron/sqlx"
 	"log"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/bwmarrin/discordgo"
+	"github.com/jmoiron/sqlx"
 )
 
 const (
@@ -36,7 +37,8 @@ const (
 	maxIDLength = 18
 )
 
-var RegexUserPatternID = regexp.MustCompile(fmt.Sprintf(`^(<@!(\d{%d,})>)$`, maxIDLength))
+// var RegexUserPatternID = regexp.MustCompile(fmt.Sprintf(`^(<@!(\d{%d,})>)$`, maxIDLength))
+var RegexUserPatternID = regexp.MustCompile(fmt.Sprintf(`<@.?[0-9]*?>`))
 
 func oops(e error, n string) {
 	log.Printf("Error %s in %s", e, n)
@@ -144,6 +146,7 @@ func MessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	//!checkscore @username
 	parameters := strings.Split(messageContent, " ")
 	if strings.EqualFold(parameters[0], commandCheckScore) && RegexUserPatternID.MatchString(parameters[1]) {
+		fmt.Println("checkscore criteria met")
 		//connect to challengeDB
 		db, err := ConnectToDB()
 		if err != nil {
