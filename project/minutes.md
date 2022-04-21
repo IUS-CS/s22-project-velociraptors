@@ -115,3 +115,17 @@ Points | Story
 4      | finalizing project
 2      | final additions
 6      | final touchups 
+
+# Sprint  6- Closing Minutes
+## 4/21/22
+
+This sprint, we completed:
+* Additions to Discord Bot
+* Handeled minor errors
+* Presentation
+
+### Retrospective
+
+What went well? - Finalizing project.
+What can be improved? - Starting on tasks late.
+What will we commit to improving on starting another project/next sprint? - Overall comunitcation. Getting with teammates and knowing each of our streanths and weaknesses. Starting early.
