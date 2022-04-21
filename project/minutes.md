@@ -121,7 +121,7 @@ Points | Story
 
 This sprint, we completed:
 * Additions to Discord Bot
-* Handeled minor errors
+* Handled minor errors(Fixed the show score command)
 * Presentation
 
 ### Retrospective
